@@ -1,0 +1,32 @@
+# Dockerfile for FastAPI Backend
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies including build tools and python dev headers
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements (create if needed)
+COPY requirements.txt .
+
+# Install Python packages with optimization
+RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt 2>/dev/null || \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY backend_sqlite.py .
+
+# Expose port
+EXPOSE 8001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# Run application
+CMD ["python", "backend_sqlite.py"]
