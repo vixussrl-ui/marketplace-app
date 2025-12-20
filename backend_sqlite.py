@@ -690,7 +690,9 @@ async def refresh_orders(request: Request):
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
             )
-            new_orders = await client.fetch_orders()
+            # DOAR comenzi noi (1) și in progress (2)
+            print(f"[REFRESH][EMAG] Fetching ONLY 'new' (1) and 'in progress' (2) orders")
+            new_orders = await client.fetch_orders(statuses=[1, 2])
         elif platform == 2:
             print(f"[REFRESH] Fetching Trendyol orders")
             try:
@@ -700,7 +702,9 @@ async def refresh_orders(request: Request):
                     api_secret=cred_d.get("client_secret", ""),
                 )
                 print(f"[REFRESH] TrendyolClient created successfully")
-                # DOAR comenzi noi (Created = new)
+                
+                # IMPORTANT: Preluăm DOAR comenzile "Created" (new)
+                # Comenzile vechi din DB care nu mai apar în acest status vor fi șterse automat
                 status_list = [
                     "Created",          # Comenzi noi - singurele care ne interesează
                 ]
@@ -737,8 +741,12 @@ async def refresh_orders(request: Request):
             raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
 
         print(f"[REFRESH] Got {len(new_orders)} orders, updating database")
+        
+        # Pas 1: Colectăm ID-urile comenzilor care trebuie să rămână
+        new_order_ids = set()
         for order in new_orders:
             order_id = f"{order['order_id']}-{cred_id}"
+            new_order_ids.add(order_id)
             items_json = json.dumps(order.get("items", []))
             conn.execute(
                 """
@@ -764,6 +772,35 @@ async def refresh_orders(request: Request):
                     items_json,
                 ),
             )
+        
+        # Pas 2: Ștergem comenzile vechi care nu mai sunt în lista nouă
+        # (înseamnă că au fost procesate și nu mai sunt "new" sau "in progress")
+        if new_order_ids:
+            # Găsim comenzile vechi pentru acest credential
+            cur = conn.execute(
+                "SELECT id FROM orders WHERE user_id = ? AND credential_id = ?",
+                (user["id"], cred_id),
+            )
+            old_order_ids = {row[0] for row in cur.fetchall()}
+            
+            # Comenzile care trebuie șterse = comenzi vechi care nu sunt în lista nouă
+            orders_to_delete = old_order_ids - new_order_ids
+            
+            if orders_to_delete:
+                print(f"[REFRESH] Deleting {len(orders_to_delete)} old/processed orders")
+                for old_id in orders_to_delete:
+                    conn.execute(
+                        "DELETE FROM orders WHERE id = ? AND user_id = ? AND credential_id = ?",
+                        (old_id, user["id"], cred_id),
+                    )
+        else:
+            # Dacă nu sunt comenzi noi, ștergem TOATE comenzile vechi pentru acest credential
+            print(f"[REFRESH] No new orders found, deleting all old orders for this credential")
+            conn.execute(
+                "DELETE FROM orders WHERE user_id = ? AND credential_id = ?",
+                (user["id"], cred_id),
+            )
+        
         conn.execute(
             "UPDATE credentials SET last_sync = ? WHERE id = ? AND user_id = ?",
             (datetime.now().isoformat(), cred_id, user["id"]),
