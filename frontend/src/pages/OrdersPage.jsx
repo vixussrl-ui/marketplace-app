@@ -428,13 +428,14 @@ export default function OrdersPage() {
             bodyStyle={theme.CARD_STYLES.body}
           >
             <Table
+              className="compact-orders-table"
               columns={[
                 {
                   title: 'SKU',
                   dataIndex: 'sku',
                   key: 'sku',
                   width: '40%',
-                  render: (text) => <strong>{text}</strong>,
+                  render: (text) => <strong style={{ color: '#2563eb', fontSize: '14px' }}>{text}</strong>,
                 },
                 {
                   title: 'EMAG',
@@ -442,7 +443,16 @@ export default function OrdersPage() {
                   key: 'emag',
                   width: '20%',
                   align: 'center',
-                  render: (qty) => <Tag color="#ff6b35">{qty}</Tag>,
+                  render: (qty) => (
+                    <Tag color="#ff6b35" style={{ 
+                      fontWeight: 'bold', 
+                      fontSize: '13px',
+                      padding: '4px 12px',
+                      borderRadius: '6px'
+                    }}>
+                      {qty}
+                    </Tag>
+                  ),
                 },
                 {
                   title: 'Trendyol',
@@ -450,7 +460,16 @@ export default function OrdersPage() {
                   key: 'trendyol',
                   width: '20%',
                   align: 'center',
-                  render: (qty) => <Tag color="#00d4ff">{qty}</Tag>,
+                  render: (qty) => (
+                    <Tag color="#00d4ff" style={{ 
+                      fontWeight: 'bold', 
+                      fontSize: '13px',
+                      padding: '4px 12px',
+                      borderRadius: '6px'
+                    }}>
+                      {qty}
+                    </Tag>
+                  ),
                 },
                 {
                   title: 'Total to Prepare',
@@ -459,7 +478,12 @@ export default function OrdersPage() {
                   width: '20%',
                   align: 'center',
                   render: (qty) => (
-                    <Tag color="gold" style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                    <Tag color="gold" style={{ 
+                      fontWeight: 'bold', 
+                      fontSize: '15px',
+                      padding: '6px 14px',
+                      borderRadius: '6px'
+                    }}>
                       {qty}
                     </Tag>
                   ),
@@ -467,13 +491,17 @@ export default function OrdersPage() {
               ]}
               dataSource={productSummary.combined}
               rowKey="sku"
+              loading={loading}
+              locale={theme.TABLE_CONFIG.locale}
               pagination={{
-                pageSize: 20,
+                ...theme.TABLE_CONFIG.pagination(20),
                 showTotal: (total) => `Total ${total} products`
               }}
-              locale={theme.TABLE_CONFIG.locale}
+              style={theme.TABLE_CONFIG.tableStyle}
+              rowClassName={() => theme.TABLE_CONFIG.rowClassName}
+              scroll={{ x: 900 }}
             />
-            {productSummary.combined.length === 0 && (
+            {productSummary.combined.length === 0 && !loading && (
               <div style={{ textAlign: 'center', color: theme.COLORS.text.muted, padding: '40px 0' }}>
                 No products found
               </div>
