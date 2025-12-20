@@ -1,14 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Table, Button, Space, Select, message, Tag, Tabs } from 'antd';
-import { ReloadOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Card, Table, Button, Space, Select, message, Tag, Tabs, Switch, Tooltip } from 'antd';
+import { ReloadOutlined, ClockCircleOutlined, SyncOutlined } from '@ant-design/icons';
 import { ordersAPI, credentialsAPI } from '../api';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
+
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [credentials, setCredentials] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [lastRefreshTime, setLastRefreshTime] = useState(null);
+  const [nextRefreshIn, setNextRefreshIn] = useState(AUTO_REFRESH_INTERVAL / 1000);
+  
+  const autoRefreshTimerRef = useRef(null);
+  const countdownTimerRef = useRef(null);
 
   const userId = localStorage.getItem('user_id');
 
@@ -21,6 +29,47 @@ export default function OrdersPage() {
       loadAllOrders();
     }
   }, [credentials]);
+
+  // Auto-refresh setup
+  useEffect(() => {
+    // Clear existing timers
+    if (autoRefreshTimerRef.current) {
+      clearInterval(autoRefreshTimerRef.current);
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+    }
+
+    if (autoRefreshEnabled && credentials.length > 0) {
+      // Set up auto-refresh
+      autoRefreshTimerRef.current = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          handleRefresh(true); // true = silent refresh (no success message)
+        }
+      }, AUTO_REFRESH_INTERVAL);
+
+      // Set up countdown timer (updates every second)
+      setNextRefreshIn(AUTO_REFRESH_INTERVAL / 1000);
+      countdownTimerRef.current = setInterval(() => {
+        setNextRefreshIn(prev => {
+          if (prev <= 1) {
+            return AUTO_REFRESH_INTERVAL / 1000;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    // Cleanup on unmount or when autoRefresh is disabled
+    return () => {
+      if (autoRefreshTimerRef.current) {
+        clearInterval(autoRefreshTimerRef.current);
+      }
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+      }
+    };
+  }, [autoRefreshEnabled, credentials]);
 
   const loadCredentials = async () => {
     try {
@@ -69,7 +118,7 @@ export default function OrdersPage() {
     window.open(url, '_blank');
   };
 
-  const handleRefresh = async () => {
+  const handleRefresh = async (silent = false) => {
     setLoading(true);
     try {
       for (const cred of credentials) {
@@ -80,11 +129,36 @@ export default function OrdersPage() {
         }
       }
       await loadAllOrders();
-      message.success('Orders refreshed from all marketplaces');
+      setLastRefreshTime(new Date());
+      
+      // Reset countdown timer
+      setNextRefreshIn(AUTO_REFRESH_INTERVAL / 1000);
+      
+      if (!silent) {
+        message.success('Orders refreshed from all marketplaces');
+      } else {
+        message.info('Orders auto-refreshed', 2);
+      }
     } catch (error) {
       message.error('Failed to refresh: ' + error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const formatCountdown = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const toggleAutoRefresh = (checked) => {
+    setAutoRefreshEnabled(checked);
+    if (checked) {
+      message.success('Auto-refresh enabled (every 5 minutes)');
+      setNextRefreshIn(AUTO_REFRESH_INTERVAL / 1000);
+    } else {
+      message.info('Auto-refresh disabled');
     }
   };
 
@@ -278,10 +352,42 @@ export default function OrdersPage() {
             headStyle={theme.CARD_STYLES.head}
             bodyStyle={theme.CARD_STYLES.body}
             extra={
-              <Space size="small" className="toolbar">
+              <Space size="small" className="toolbar" wrap>
+                <Tooltip title={autoRefreshEnabled ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    padding: '4px 12px',
+                    background: autoRefreshEnabled ? '#f0f9ff' : '#fafafa',
+                    borderRadius: '6px',
+                    border: `1px solid ${autoRefreshEnabled ? '#bae6fd' : '#e5e7eb'}`
+                  }}>
+                    <SyncOutlined 
+                      spin={autoRefreshEnabled && loading} 
+                      style={{ 
+                        color: autoRefreshEnabled ? '#0284c7' : '#9ca3af',
+                        fontSize: '14px'
+                      }} 
+                    />
+                    <span style={{ 
+                      fontSize: '12px', 
+                      color: autoRefreshEnabled ? '#0c4a6e' : '#6b7280',
+                      fontWeight: 500,
+                      minWidth: '45px'
+                    }}>
+                      {autoRefreshEnabled ? formatCountdown(nextRefreshIn) : 'OFF'}
+                    </span>
+                    <Switch 
+                      size="small"
+                      checked={autoRefreshEnabled}
+                      onChange={toggleAutoRefresh}
+                    />
+                  </div>
+                </Tooltip>
                 <Button
                   icon={<ReloadOutlined />}
-                  onClick={handleRefresh}
+                  onClick={() => handleRefresh(false)}
                   loading={loading}
                   style={theme.BUTTON_STYLES.secondary}
                 >
