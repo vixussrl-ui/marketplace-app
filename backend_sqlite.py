@@ -565,8 +565,8 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
     
     # Statusuri permise:
     # EMAG: "new" (1) și "in progress" (2)
-    # Trendyol: "new" (Created) și "picking" (în procesare)
-    allowed_statuses = ['new', 'in progress', 'picking']
+    # Trendyol: "new" (Created) și "processing" (Picking în API)
+    allowed_statuses = ['new', 'in progress', 'processing']
     
     if credential_id:
         cur = conn.execute(
