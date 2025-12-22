@@ -375,6 +375,80 @@ export default function OrdersPage() {
     }
   }, [productSummary.combined]);
 
+  // Funcție helper pentru toolbar (folosită în Order Dashboard și Product Summary)
+  const renderToolbar = () => (
+    <Space size="small" className="toolbar" wrap>
+      {/* Toggle-uri pentru integrare */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '12px',
+        padding: '4px 12px',
+        background: '#fafafa',
+        borderRadius: '6px',
+        border: '1px solid #e5e7eb'
+      }}>
+        <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '12px', color: '#ff6b35', fontWeight: 500 }}>eMAG</span>
+          <Switch 
+            size="small"
+            checked={emagEnabled}
+            onChange={setEmagEnabled}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '12px', color: '#00d4ff', fontWeight: 500 }}>Trendyol</span>
+          <Switch 
+            size="small"
+            checked={trendyolEnabled}
+            onChange={setTrendyolEnabled}
+          />
+        </div>
+      </div>
+      <Tooltip title={autoRefreshEnabled ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          padding: '4px 12px',
+          background: autoRefreshEnabled ? '#f0f9ff' : '#fafafa',
+          borderRadius: '6px',
+          border: `1px solid ${autoRefreshEnabled ? '#bae6fd' : '#e5e7eb'}`
+        }}>
+          <SyncOutlined 
+            spin={autoRefreshEnabled && loading} 
+            style={{ 
+              color: autoRefreshEnabled ? '#0284c7' : '#9ca3af',
+              fontSize: '14px'
+            }} 
+          />
+          <span style={{ 
+            fontSize: '12px', 
+            color: autoRefreshEnabled ? '#0c4a6e' : '#6b7280',
+            fontWeight: 500,
+            minWidth: '45px'
+          }}>
+            {autoRefreshEnabled ? formatCountdown(nextRefreshIn) : 'OFF'}
+          </span>
+          <Switch 
+            size="small"
+            checked={autoRefreshEnabled}
+            onChange={toggleAutoRefresh}
+          />
+        </div>
+      </Tooltip>
+      <Button
+        icon={<ReloadOutlined />}
+        onClick={() => handleRefresh(false)}
+        loading={loading}
+        style={theme.BUTTON_STYLES.secondary}
+      >
+        Refresh
+      </Button>
+    </Space>
+  );
+
   return (
     <MainLayout currentKey="orders">
       <style>
@@ -425,78 +499,7 @@ export default function OrdersPage() {
             }}
             headStyle={theme.CARD_STYLES.head}
             bodyStyle={theme.CARD_STYLES.body}
-            extra={
-              <Space size="small" className="toolbar" wrap>
-                {/* Toggle-uri pentru integrare */}
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '12px',
-                  padding: '4px 12px',
-                  background: '#fafafa',
-                  borderRadius: '6px',
-                  border: '1px solid #e5e7eb'
-                }}>
-                  <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '12px', color: '#ff6b35', fontWeight: 500 }}>eMAG</span>
-                    <Switch 
-                      size="small"
-                      checked={emagEnabled}
-                      onChange={setEmagEnabled}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '12px', color: '#00d4ff', fontWeight: 500 }}>Trendyol</span>
-                    <Switch 
-                      size="small"
-                      checked={trendyolEnabled}
-                      onChange={setTrendyolEnabled}
-                    />
-                  </div>
-                </div>
-                <Tooltip title={autoRefreshEnabled ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}>
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '8px',
-                    padding: '4px 12px',
-                    background: autoRefreshEnabled ? '#f0f9ff' : '#fafafa',
-                    borderRadius: '6px',
-                    border: `1px solid ${autoRefreshEnabled ? '#bae6fd' : '#e5e7eb'}`
-                  }}>
-                    <SyncOutlined 
-                      spin={autoRefreshEnabled && loading} 
-                      style={{ 
-                        color: autoRefreshEnabled ? '#0284c7' : '#9ca3af',
-                        fontSize: '14px'
-                      }} 
-                    />
-                    <span style={{ 
-                      fontSize: '12px', 
-                      color: autoRefreshEnabled ? '#0c4a6e' : '#6b7280',
-                      fontWeight: 500,
-                      minWidth: '45px'
-                    }}>
-                      {autoRefreshEnabled ? formatCountdown(nextRefreshIn) : 'OFF'}
-                    </span>
-                    <Switch 
-                      size="small"
-                      checked={autoRefreshEnabled}
-                      onChange={toggleAutoRefresh}
-                    />
-                  </div>
-                </Tooltip>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={() => handleRefresh(false)}
-                  loading={loading}
-                  style={theme.BUTTON_STYLES.secondary}
-                >
-                  Refresh
-                </Button>
-              </Space>
-            }
+            extra={renderToolbar()}
           >
             <Table
               className="compact-orders-table"
@@ -506,7 +509,7 @@ export default function OrdersPage() {
               loading={loading}
               locale={theme.TABLE_CONFIG.locale}
               pagination={{
-                ...theme.TABLE_CONFIG.pagination(20),
+                ...theme.TABLE_CONFIG.pagination(50),
                 showTotal: (total) => `Total ${total} orders`
               }}
               onRow={(record) => ({
@@ -528,6 +531,7 @@ export default function OrdersPage() {
             }}
             headStyle={theme.CARD_STYLES.head}
             bodyStyle={theme.CARD_STYLES.body}
+            extra={renderToolbar()}
           >
             <Table
               className="compact-orders-table"
