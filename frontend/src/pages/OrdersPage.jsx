@@ -17,10 +17,29 @@ export default function OrdersPage() {
   const [oblioStock, setOblioStock] = useState({});
   const [loadingStock, setLoadingStock] = useState(false);
   
+  // Toggle-uri pentru integrare (salvate în localStorage)
+  const [emagEnabled, setEmagEnabled] = useState(() => {
+    const saved = localStorage.getItem('emagEnabled');
+    return saved !== null ? saved === 'true' : true; // default true
+  });
+  const [trendyolEnabled, setTrendyolEnabled] = useState(() => {
+    const saved = localStorage.getItem('trendyolEnabled');
+    return saved !== null ? saved === 'true' : true; // default true
+  });
+  
   const autoRefreshTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
 
   const userId = localStorage.getItem('user_id');
+  
+  // Salvează toggle-urile în localStorage când se schimbă
+  useEffect(() => {
+    localStorage.setItem('emagEnabled', emagEnabled.toString());
+  }, [emagEnabled]);
+  
+  useEffect(() => {
+    localStorage.setItem('trendyolEnabled', trendyolEnabled.toString());
+  }, [trendyolEnabled]);
 
   useEffect(() => {
     loadCredentials();
@@ -281,11 +300,24 @@ export default function OrdersPage() {
     },
   ];
 
+  // Filtrează orders în funcție de toggle-uri active
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      if (order.marketplace === 'EMAG') {
+        return emagEnabled;
+      } else if (order.marketplace === 'Trendyol') {
+        return trendyolEnabled;
+      }
+      return true; // Alte platforme rămân
+    });
+  }, [orders, emagEnabled, trendyolEnabled]);
+
   const productSummary = useMemo(() => {
     const emagProducts = {};
     const trendyolProducts = {};
     
-    orders.forEach(order => {
+    // Folosim filteredOrders în loc de orders
+    filteredOrders.forEach(order => {
       order.items?.forEach(item => {
         const qty = item.qty || item.quantity || 0;
         if (order.marketplace === 'EMAG') {
@@ -333,7 +365,7 @@ export default function OrdersPage() {
           .sort((a, b) => b.total - a.total)
       })()
     };
-  }, [orders]);
+  }, [filteredOrders]);
 
   // Load Oblio stock when product summary changes
   useEffect(() => {
@@ -395,6 +427,34 @@ export default function OrdersPage() {
             bodyStyle={theme.CARD_STYLES.body}
             extra={
               <Space size="small" className="toolbar" wrap>
+                {/* Toggle-uri pentru integrare */}
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px',
+                  padding: '4px 12px',
+                  background: '#fafafa',
+                  borderRadius: '6px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: '#ff6b35', fontWeight: 500 }}>eMAG</span>
+                    <Switch 
+                      size="small"
+                      checked={emagEnabled}
+                      onChange={setEmagEnabled}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: '#00d4ff', fontWeight: 500 }}>Trendyol</span>
+                    <Switch 
+                      size="small"
+                      checked={trendyolEnabled}
+                      onChange={setTrendyolEnabled}
+                    />
+                  </div>
+                </div>
                 <Tooltip title={autoRefreshEnabled ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}>
                   <div style={{ 
                     display: 'flex', 
@@ -441,7 +501,7 @@ export default function OrdersPage() {
             <Table
               className="compact-orders-table"
               columns={columns}
-              dataSource={orders}
+              dataSource={filteredOrders}
               rowKey="id"
               loading={loading}
               locale={theme.TABLE_CONFIG.locale}
