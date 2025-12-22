@@ -565,8 +565,8 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
     
     # Statusuri permise:
     # EMAG: "new" (1) și "in progress" (2)
-    # Trendyol: "new" (Created) și "processing" (Picking în API)
-    allowed_statuses = ['new', 'in progress', 'processing']
+    # Trendyol: "new" (Created), "processing" (Picking), "invoiced" (Invoiced)
+    allowed_statuses = ['new', 'in progress', 'processing', 'invoiced']
     
     if credential_id:
         cur = conn.execute(
@@ -703,12 +703,13 @@ async def refresh_orders(request: Request):
                 )
                 print(f"[REFRESH] TrendyolClient created successfully")
                 
-                # Preluăm comenzile noi și în procesare
+                # Preluăm comenzile noi, în procesare și cele cu factură în așteptare
                 status_list = [
                     "Created",          # Comenzi noi
                     "Picking",          # În procesare/pregătire
+                    "Invoiced",         # Cu factură (invoice pending)
                 ]
-                print(f"[REFRESH][TRENDYOL] Fetching 'Created' (new) and 'Picking' (processing) orders")
+                print(f"[REFRESH][TRENDYOL] Fetching 'Created', 'Picking' and 'Invoiced' orders")
                 new_orders = []
                 
                 print(f"[REFRESH][TRENDYOL] Fetching ALL orders without date filters")
