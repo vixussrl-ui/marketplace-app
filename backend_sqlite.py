@@ -579,7 +579,7 @@ async def create_credential(request: Request, data: dict):
         raise HTTPException(
             status_code=400, detail="account_label and platform_id are required"
         )
-    if platform_id not in (1, 2):
+    if platform_id not in (1, 2, 3):
         raise HTTPException(status_code=400, detail="Invalid platform_id")
     if not vendor_code:
         raise HTTPException(status_code=400, detail="vendor_code is required")
@@ -641,7 +641,7 @@ async def update_credential(cred_id: int, request: Request, data: dict):
                 val = _clean_str(val)
             if col == "platform":
                 val = int(val)
-                if val not in (1, 2):
+                if val not in (1, 2, 3):
                     raise HTTPException(status_code=400, detail="Invalid platform_id")
             if col == "vendor_code" and not val:
                 raise HTTPException(status_code=400, detail="vendor_code is required")
