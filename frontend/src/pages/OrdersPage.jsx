@@ -119,11 +119,12 @@ export default function OrdersPage() {
     
     setLoadingStock(true);
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/oblio/stock`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ product_codes: productCodes })
       });
