@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, Table, Button, Space, Select, message, Tag, Tabs, Switch, Tooltip } from 'antd';
 import { ReloadOutlined, ClockCircleOutlined, SyncOutlined } from '@ant-design/icons';
-import { ordersAPI, credentialsAPI } from '../api';
+import { ordersAPI, credentialsAPI, API_BASE_URL } from '../api';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
 
@@ -14,6 +14,8 @@ export default function OrdersPage() {
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(null);
   const [nextRefreshIn, setNextRefreshIn] = useState(AUTO_REFRESH_INTERVAL / 1000);
+  const [oblioStock, setOblioStock] = useState({});
+  const [loadingStock, setLoadingStock] = useState(false);
   
   const autoRefreshTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
@@ -107,6 +109,37 @@ export default function OrdersPage() {
       message.error('Failed to load orders: ' + error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadOblioStock = async (productCodes) => {
+    if (!productCodes || productCodes.length === 0) {
+      return;
+    }
+    
+    setLoadingStock(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/oblio/stock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: JSON.stringify({ product_codes: productCodes })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch Oblio stock');
+      }
+      
+      const data = await response.json();
+      setOblioStock(data.stock || {});
+      console.log('[OBLIO] Stock loaded:', data.stock);
+    } catch (error) {
+      console.error('Failed to load Oblio stock:', error);
+      // Nu afișăm mesaj de eroare pentru a nu deranja utilizatorul
+    } finally {
+      setLoadingStock(false);
     }
   };
 
@@ -301,6 +334,14 @@ export default function OrdersPage() {
     };
   }, [orders]);
 
+  // Load Oblio stock when product summary changes
+  useEffect(() => {
+    if (productSummary.combined.length > 0) {
+      const productCodes = productSummary.combined.map(p => p.sku);
+      loadOblioStock(productCodes);
+    }
+  }, [productSummary.combined]);
+
   return (
     <MainLayout currentKey="orders">
       <style>
@@ -434,14 +475,14 @@ export default function OrdersPage() {
                   title: 'SKU',
                   dataIndex: 'sku',
                   key: 'sku',
-                  width: '40%',
+                  width: '30%',
                   render: (text) => <strong style={{ color: '#2563eb', fontSize: '14px' }}>{text}</strong>,
                 },
                 {
                   title: 'EMAG',
                   dataIndex: 'emag',
                   key: 'emag',
-                  width: '20%',
+                  width: '15%',
                   align: 'center',
                   render: (qty) => (
                     <Tag color="#ff6b35" style={{ 
@@ -458,7 +499,7 @@ export default function OrdersPage() {
                   title: 'Trendyol',
                   dataIndex: 'trendyol',
                   key: 'trendyol',
-                  width: '20%',
+                  width: '15%',
                   align: 'center',
                   render: (qty) => (
                     <Tag color="#00d4ff" style={{ 
@@ -475,7 +516,7 @@ export default function OrdersPage() {
                   title: 'Total to Prepare',
                   dataIndex: 'total',
                   key: 'total',
-                  width: '20%',
+                  width: '15%',
                   align: 'center',
                   render: (qty) => (
                     <Tag color="gold" style={{ 
@@ -488,10 +529,38 @@ export default function OrdersPage() {
                     </Tag>
                   ),
                 },
+                {
+                  title: 'Stock Oblio',
+                  dataIndex: 'sku',
+                  key: 'stock',
+                  width: '15%',
+                  align: 'center',
+                  render: (sku) => {
+                    if (loadingStock) {
+                      return <Tag color="blue">Loading...</Tag>;
+                    }
+                    const stockInfo = oblioStock[sku];
+                    if (!stockInfo) {
+                      return <Tag color="gray">-</Tag>;
+                    }
+                    const stockValue = stockInfo.stock || 0;
+                    const stockColor = stockValue > 10 ? '#52c41a' : stockValue > 0 ? '#faad14' : '#f5222d';
+                    return (
+                      <Tag color={stockColor} style={{ 
+                        fontWeight: 'bold', 
+                        fontSize: '14px',
+                        padding: '4px 12px',
+                        borderRadius: '6px'
+                      }}>
+                        {stockValue}
+                      </Tag>
+                    );
+                  },
+                },
               ]}
               dataSource={productSummary.combined}
               rowKey="sku"
-              loading={loading}
+              loading={loading || loadingStock}
               locale={theme.TABLE_CONFIG.locale}
               pagination={{
                 ...theme.TABLE_CONFIG.pagination(20),

@@ -348,6 +348,123 @@ class TrendyolClient:
             return str(timestamp_ms)
 
 
+# Oblio Client (pentru stocuri)
+class OblioClient:
+    def __init__(self, cif, email, client_secret):
+        self.cif = cif
+        self.email = email
+        self.client_secret = client_secret
+        self.base_url = "https://www.oblio.eu/api"
+        self.access_token = None
+        self.token_expires_at = None
+
+    async def _ensure_token(self):
+        """Obține sau reîmprospătează token-ul de acces"""
+        if self.access_token and self.token_expires_at:
+            if datetime.now().timestamp() < self.token_expires_at:
+                return  # Token-ul este încă valid
+        
+        # Obține un token nou
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/authorize/token",
+                    data={
+                        "client_id": self.email,
+                        "client_secret": self.client_secret
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                self.access_token = data.get("access_token")
+                expires_in = int(data.get("expires_in", 3600))
+                self.token_expires_at = datetime.now().timestamp() + expires_in - 60  # 60s buffer
+                
+                print(f"[OBLIO] Token obtained successfully, expires in {expires_in}s")
+        except Exception as e:
+            print(f"[ERROR] Failed to obtain Oblio token: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to authenticate with Oblio: {str(e)}")
+
+    async def fetch_products_stock(self, product_codes=None):
+        """
+        Fetch-uiește stocurile pentru produse din Oblio
+        product_codes: listă de coduri de produse pentru care să aducă stocurile
+        """
+        await self._ensure_token()
+        
+        try:
+            url = f"{self.base_url}/nomenclature/products"
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            params = {"cif": self.cif}
+            
+            print(f"[OBLIO] Fetching products stock from {url}")
+            
+            all_products = []
+            offset = 0
+            
+            # Fetch paginat (250 produse per pagină)
+            while True:
+                params["offset"] = offset
+                
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(url, headers=headers, params=params)
+                    print(f"[OBLIO] Response status: {response.status_code}")
+                    
+                    if response.status_code != 200:
+                        print(f"[ERROR] Oblio API error: {response.text}")
+                        break
+                    
+                    data = response.json()
+                    products = data.get("data", [])
+                    
+                    if not products:
+                        break  # Nu mai sunt produse
+                    
+                    all_products.extend(products)
+                    print(f"[OBLIO] Fetched {len(products)} products at offset {offset}")
+                    
+                    # Dacă am primit mai puțin de 250, înseamnă că am ajuns la final
+                    if len(products) < 250:
+                        break
+                    
+                    offset += 250
+            
+            print(f"[OBLIO] Total products fetched: {len(all_products)}")
+            
+            # Creăm un dict pentru lookup rapid după cod produs
+            stock_dict = {}
+            for product in all_products:
+                code = product.get("code", "")
+                if code:
+                    # Calculăm stocul total din toate gestiunile
+                    stock_data = product.get("stock", [])
+                    total_stock = sum(float(s.get("quantity", 0)) for s in stock_data) if isinstance(stock_data, list) else 0
+                    stock_dict[code] = {
+                        "code": code,
+                        "name": product.get("name", ""),
+                        "stock": total_stock,
+                        "unit": product.get("measuringUnit", "buc")
+                    }
+            
+            # Dacă s-au specificat coduri specifice, returnăm doar pe alea
+            if product_codes:
+                filtered_stock = {code: stock_dict.get(code) for code in product_codes if code in stock_dict}
+                return filtered_stock
+            
+            return stock_dict
+            
+        except Exception as e:
+            print(f"[ERROR] Error fetching Oblio products: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+
+
 @app.get("/")
 async def root():
     return {"message": "Marketplace Admin API"}
@@ -445,6 +562,7 @@ async def get_platforms():
     return [
         {"id": 1, "name": "emag", "display_name": "eMAG", "is_active": True},
         {"id": 2, "name": "trendyol", "display_name": "Trendyol", "is_active": True},
+        {"id": 3, "name": "oblio", "display_name": "Oblio (Stocuri)", "is_active": True},
     ]
 
 
@@ -610,6 +728,50 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
     print(f"[ORDERS] Returning {len(results)} active orders (filtered out {filtered_count} orders)")
     
     return results
+
+
+@app.post("/oblio/stock")
+async def get_oblio_stock(request: Request, data: dict):
+    """
+    Returnează stocurile Oblio pentru produsele specificate
+    Request body: {"product_codes": ["SKU1", "SKU2", ...]}
+    """
+    user = get_current_user(request)
+    product_codes = data.get("product_codes", [])
+    
+    if not product_codes:
+        return {"stock": {}}
+    
+    # Găsim credențialele Oblio pentru user
+    cur = conn.execute(
+        "SELECT * FROM credentials WHERE user_id = ? AND platform = 3",
+        (user["id"],)
+    )
+    cred = cur.fetchone()
+    
+    if not cred:
+        print(f"[OBLIO] No Oblio credentials found for user {user['id']}")
+        return {"stock": {}, "error": "No Oblio credentials configured"}
+    
+    cred_d = row_to_dict(cred)
+    
+    try:
+        client = OblioClient(
+            cif=cred_d.get("vendor_code", ""),  # CIF-ul firmei
+            email=cred_d.get("client_id", ""),   # Email-ul
+            client_secret=cred_d.get("client_secret", "")  # Token-ul secret
+        )
+        
+        print(f"[OBLIO] Fetching stock for {len(product_codes)} products")
+        stock_dict = await client.fetch_products_stock(product_codes)
+        
+        return {"stock": stock_dict}
+    
+    except Exception as e:
+        print(f"[ERROR] Error fetching Oblio stock: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"stock": {}, "error": str(e)}
 
 
 @app.get("/test/trendyol/{credential_id}")
