@@ -563,10 +563,10 @@ async def delete_credential(cred_id: int, request: Request):
 async def list_orders(request: Request, credential_id: Optional[int] = None):
     user = get_current_user(request)
     
-    # DEBUGGING: Afișăm TOATE comenzile pentru a vedea ce status-uri există
+    # Statusuri permise:
     # EMAG: "new" (1) și "in progress" (2)
-    # Trendyol: orice status
-    allowed_statuses = ['new', 'in progress', 'picking', 'shipped', 'invoiced', 'delivered', 'cancelled', 'unsupplied']
+    # Trendyol: "new" (Created) și "picking" (în procesare)
+    allowed_statuses = ['new', 'in progress', 'picking']
     
     if credential_id:
         cur = conn.execute(
@@ -598,16 +598,16 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
         except Exception:
             d["items"] = []
         
-        # DEBUGGING: Afișăm toate comenzile cu status-uri permise
+        # Filtrăm - afișăm doar comenzile active (new, in progress, picking)
         if d.get("status", "").lower() not in allowed_statuses:
             filtered_count += 1
-            print(f"[ORDERS]   - FILTERED Order {d['platform_order_id']}, Status: {d['status']} (not in allowed list)")
+            print(f"[ORDERS]   - FILTERED Order {d['platform_order_id']}, Status: {d['status']} (not active)")
             continue
             
-        print(f"[ORDERS]   + Order {d['platform_order_id']}, Status: {d['status']}, Credential: {d['credential_id']}")
+        print(f"[ORDERS]   + ACTIVE Order {d['platform_order_id']}, Status: {d['status']}, Credential: {d['credential_id']}")
         results.append(d)
     
-    print(f"[ORDERS] Returning {len(results)} orders (filtered out {filtered_count} orders)")
+    print(f"[ORDERS] Returning {len(results)} active orders (filtered out {filtered_count} orders)")
     
     return results
 
@@ -703,15 +703,12 @@ async def refresh_orders(request: Request):
                 )
                 print(f"[REFRESH] TrendyolClient created successfully")
                 
-                # IMPORTANT: DEBUGGING - Preluăm toate comenzile pentru a vedea ce există
+                # Preluăm comenzile noi și în procesare
                 status_list = [
                     "Created",          # Comenzi noi
-                    "Picking",          # În pregătire
-                    "Shipped",          # Expediate
-                    "Invoiced",         # Facturate
-                    "UnSupplied",       # Fără stoc
+                    "Picking",          # În procesare/pregătire
                 ]
-                print(f"[REFRESH][TRENDYOL] DEBUGGING - Fetching ALL statuses to check what orders exist")
+                print(f"[REFRESH][TRENDYOL] Fetching 'Created' (new) and 'Picking' (processing) orders")
                 new_orders = []
                 
                 print(f"[REFRESH][TRENDYOL] Fetching ALL orders without date filters")
