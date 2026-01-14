@@ -201,15 +201,8 @@ class EMAGClient:
                 print(f"[EMAG] Processing {len(raw_orders)} orders (page {current_page}/{total_pages}, total: {total_count})")
 
                 for order in raw_orders:
-                    order_id = str(order.get("id"))
                     status_val = order.get("status")
                     status_text = self.status_map.get(status_val, str(status_val))
-                    
-                    # Log pentru debugging - verificăm dacă comanda 1135289421 este în listă
-                    if "1135289421" in order_id:
-                        print(f"[EMAG DEBUG] Found order 1135289421! Status: {status_val} ({status_text}), Full order data: {order}")
-                    
-                    print(f"[EMAG DEBUG] Order ID: {order_id}, Status: {status_val} ({status_text})")
 
                     items = []
                     for item in order.get("products", []):
@@ -226,7 +219,7 @@ class EMAGClient:
                         items.append(item_data)
 
                     order_data = {
-                        "order_id": order_id,
+                        "order_id": str(order.get("id")),
                         "status": status_text,
                         "order_type": order.get("type", 3),
                         "vendor_code": self.vendor_code,
@@ -889,10 +882,8 @@ async def refresh_orders(request: Request):
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
             )
-            # Încercăm să preluăm toate statusurile pentru a găsi comanda 1135289421
-            # Statusuri eMAG: 0=canceled, 1=new, 2=in progress, 3=prepared, 4=finalized, 5=returned
-            print(f"[REFRESH][EMAG] Fetching orders with statuses [1, 2, 3] (new, in progress, prepared)")
-            print(f"[REFRESH][EMAG] Looking for order 1135289421...")
+            # Comenzi noi (1), in progress (2) și prepared (3)
+            print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders")
             new_orders = []
             page = 1
             max_pages = 100  # Limita de siguranță
@@ -903,62 +894,10 @@ async def refresh_orders(request: Request):
                     break
                 new_orders.extend(orders_batch)
                 print(f"[REFRESH] Got {len(orders_batch)} orders at page {page}/{total_pages} (total: {total_count})")
-                
-                # Verificăm dacă comanda 1135289421 este în batch-ul curent
-                found_order = [o for o in orders_batch if "1135289421" in str(o.get("order_id", ""))]
-                if found_order:
-                    print(f"[REFRESH][EMAG] FOUND order 1135289421 in batch! Order: {found_order[0]}")
-                else:
-                    order_ids = [str(o.get("order_id", "")) for o in orders_batch]
-                    print(f"[REFRESH][EMAG] Order IDs in this batch: {order_ids}")
-                
                 page += 1
                 if page > total_pages:
                     print(f"[REFRESH] Reached last page ({total_pages})")
                     break
-            
-            # Dacă nu am găsit comanda în statusurile 1,2,3, încercăm și cu statusul 4 (finalized)
-            if not any("1135289421" in str(o.get("order_id", "")) for o in new_orders):
-                print(f"[REFRESH][EMAG] Order 1135289421 not found in statuses [1,2,3]. Trying status 4 (finalized)...")
-                page = 1
-                while page <= max_pages:
-                    orders_batch, total_pages, total_count = await client.fetch_orders(statuses=[4], page=page)
-                    if not orders_batch:
-                        print(f"[REFRESH][EMAG] No more finalized orders at page {page}")
-                        break
-                    found_order = [o for o in orders_batch if "1135289421" in str(o.get("order_id", ""))]
-                    if found_order:
-                        print(f"[REFRESH][EMAG] FOUND order 1135289421 in finalized orders! Adding to list...")
-                        new_orders.extend(orders_batch)
-                        break
-                    else:
-                        order_ids = [str(o.get("order_id", "")) for o in orders_batch]
-                        print(f"[REFRESH][EMAG] Finalized orders batch page {page}: {len(order_ids)} orders, IDs: {order_ids[:10]}...")
-                    page += 1
-                    if page > total_pages:
-                        print(f"[REFRESH][EMAG] Reached last page ({total_pages}) for finalized orders")
-                        break
-                
-                # Dacă tot nu am găsit, încercăm și cu statusurile 0 (canceled) și 5 (returned)
-                if not any("1135289421" in str(o.get("order_id", "")) for o in new_orders):
-                    print(f"[REFRESH][EMAG] Order 1135289421 still not found. Trying status 0 (canceled) and 5 (returned)...")
-                    for status_to_try in [0, 5]:
-                        print(f"[REFRESH][EMAG] Trying status {status_to_try}...")
-                        page = 1
-                        while page <= 10:  # Limita mai mică pentru statusuri rare
-                            orders_batch, total_pages, total_count = await client.fetch_orders(statuses=[status_to_try], page=page)
-                            if not orders_batch:
-                                break
-                            found_order = [o for o in orders_batch if "1135289421" in str(o.get("order_id", ""))]
-                            if found_order:
-                                print(f"[REFRESH][EMAG] FOUND order 1135289421 in status {status_to_try}! Adding to list...")
-                                new_orders.extend(orders_batch)
-                                break
-                            page += 1
-                            if page > total_pages:
-                                break
-                        if any("1135289421" in str(o.get("order_id", "")) for o in new_orders):
-                            break
         elif platform == 2:
             print(f"[REFRESH] Fetching Trendyol orders")
             try:
