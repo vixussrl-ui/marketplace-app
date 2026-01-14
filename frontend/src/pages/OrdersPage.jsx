@@ -79,6 +79,21 @@ export default function OrdersPage() {
     }
     return '#6b7280'; // Gray default
   };
+  
+  // Obține culoarea pentru un marketplace (folosită în tabel)
+  const getMarketplaceColor = (marketplace) => {
+    const marketplaceUpper = marketplace?.toUpperCase() || '';
+    if (marketplaceUpper === 'EMAG RO' || marketplaceUpper === 'EMAG') {
+      return '#ff6b35'; // Orange pentru eMAG RO
+    } else if (marketplaceUpper === 'EMAG HU') {
+      return '#8b5cf6'; // Purple pentru eMAG HU
+    } else if (marketplaceUpper === 'TRENDYOL') {
+      return '#00d4ff'; // Cyan pentru Trendyol
+    } else if (marketplaceUpper === 'OBLIO') {
+      return '#10b981'; // Green pentru Oblio
+    }
+    return '#6b7280'; // Gray default
+  };
 
   useEffect(() => {
     loadCredentials();
@@ -292,11 +307,14 @@ export default function OrdersPage() {
       dataIndex: 'marketplace',
       key: 'marketplace',
       width: 100,
-      render: (marketplace) => (
-        <Tag color={marketplace === 'EMAG' ? '#ff6b35' : '#00d4ff'} style={{ fontWeight: 'bold' }}>
-          {marketplace}
-        </Tag>
-      ),
+      render: (marketplace) => {
+        const color = getMarketplaceColor(marketplace);
+        return (
+          <Tag color={color} style={{ fontWeight: 'bold' }}>
+            {marketplace}
+          </Tag>
+        );
+      },
     },
     {
       title: 'Status',
