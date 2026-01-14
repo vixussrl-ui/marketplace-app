@@ -118,22 +118,22 @@ export default function OrdersPage() {
           console.error(`Failed to load orders for credential ${cred.id}:`, error);
         }
       }
-      // Eliminăm duplicatele bazate pe platform_order_id, marketplace și credential_id
-      // Dacă aceeași comandă apare pentru credentiale diferite, păstrăm ambele (pot fi de la țări diferite)
+      // Eliminăm duplicatele bazate pe platform_order_id și marketplace
+      // Dacă aceeași comandă apare pentru credentiale diferite (ex: România și Ungaria), păstrăm doar una
       const seenOrders = new Map();
       const uniqueOrders = [];
       for (const order of allOrders) {
-        // Include credential_id în cheie pentru a distinge între credentiale diferite
-        const key = `${order.platform_order_id}-${order.marketplace}-${order.credentialId}`;
+        // Cheia de deduplicare: platform_order_id + marketplace (fără credential_id)
+        const key = `${order.platform_order_id}-${order.marketplace}`;
         if (!seenOrders.has(key)) {
           seenOrders.set(key, order);
           uniqueOrders.push(order);
         } else {
-          // Dacă există deja aceeași comandă pentru același credential, păstrăm cea mai recentă
+          // Dacă există deja aceeași comandă, păstrăm cea mai recentă
           const existing = seenOrders.get(key);
           const existingDate = new Date(existing.created_at || 0);
           const newDate = new Date(order.created_at || 0);
-          if (newDate > existingDate) {
+          if (newDate > existingDate || (newDate.getTime() === existingDate.getTime() && order.credentialId < existing.credentialId)) {
             const index = uniqueOrders.indexOf(existing);
             uniqueOrders[index] = order;
             seenOrders.set(key, order);
