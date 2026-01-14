@@ -189,11 +189,16 @@ class EMAGClient:
                 if data.get("isError"):
                     error_msg = data.get("messages", ["Unknown error"])
                     print(f"[ERROR] EMAG API error: {error_msg}")
-                    return []
+                    return [], 1, 0
 
                 orders = []
                 raw_orders = data.get("results", [])
-                print(f"[EMAG] Processing {len(raw_orders)} orders")
+                # Verificăm dacă există informații despre paginare
+                total_count = data.get("totalCount", len(raw_orders))
+                current_page = data.get("currentPage", page)
+                total_pages = data.get("totalPages", 1)
+                
+                print(f"[EMAG] Processing {len(raw_orders)} orders (page {current_page}/{total_pages}, total: {total_count})")
 
                 for order in raw_orders:
                     status_val = order.get("status")
@@ -224,12 +229,12 @@ class EMAGClient:
                     orders.append(order_data)
 
                 print(f"[OK] Successfully parsed {len(orders)} orders")
-                return orders
+                return orders, total_pages, total_count
         except Exception as e:
             print(f"[ERROR] Error fetching EMAG orders: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
-            return []
+            return [], 1, 0
 
 
 # Trendyol Client
@@ -879,7 +884,20 @@ async def refresh_orders(request: Request):
             )
             # Comenzi noi (1), in progress (2) și prepared (3)
             print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders")
-            new_orders = await client.fetch_orders(statuses=[1, 2, 3])
+            new_orders = []
+            page = 1
+            max_pages = 100  # Limita de siguranță
+            while page <= max_pages:
+                orders_batch, total_pages, total_count = await client.fetch_orders(statuses=[1, 2, 3], page=page)
+                if not orders_batch:
+                    print(f"[REFRESH] No more orders at page {page}")
+                    break
+                new_orders.extend(orders_batch)
+                print(f"[REFRESH] Got {len(orders_batch)} orders at page {page}/{total_pages} (total: {total_count})")
+                page += 1
+                if page > total_pages:
+                    print(f"[REFRESH] Reached last page ({total_pages})")
+                    break
         elif platform == 2:
             print(f"[REFRESH] Fetching Trendyol orders")
             try:
