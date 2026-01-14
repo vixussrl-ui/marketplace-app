@@ -948,9 +948,22 @@ async def refresh_orders(request: Request):
 
         print(f"[REFRESH] Got {len(new_orders)} orders, updating database")
         
+        # Eliminăm duplicatele din new_orders (în cazul în care o comandă apare de mai multe ori)
+        seen_order_ids = {}
+        unique_orders = []
+        for order in new_orders:
+            order_id_key = order['order_id']
+            if order_id_key not in seen_order_ids:
+                seen_order_ids[order_id_key] = order
+                unique_orders.append(order)
+            else:
+                print(f"[REFRESH] Duplicate order detected: {order_id_key}, skipping...")
+        
+        print(f"[REFRESH] After deduplication: {len(unique_orders)} unique orders (removed {len(new_orders) - len(unique_orders)} duplicates)")
+        
         # Pas 1: Colectăm ID-urile comenzilor care trebuie să rămână
         new_order_ids = set()
-        for order in new_orders:
+        for order in unique_orders:
             order_id = f"{order['order_id']}-{cred_id}"
             new_order_ids.add(order_id)
             items_json = json.dumps(order.get("items", []))
