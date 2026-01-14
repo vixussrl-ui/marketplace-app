@@ -707,9 +707,9 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
     user = get_current_user(request)
     
     # Statusuri permise:
-    # EMAG: "new" (1) și "in progress" (2)
+    # EMAG: "new" (1), "in progress" (2) și "prepared" (3)
     # Trendyol: "new" (Created), "processing" (Picking), "invoiced" (Invoiced)
-    allowed_statuses = ['new', 'in progress', 'processing', 'invoiced']
+    allowed_statuses = ['new', 'in progress', 'prepared', 'processing', 'invoiced']
     
     if credential_id:
         cur = conn.execute(
@@ -877,9 +877,9 @@ async def refresh_orders(request: Request):
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
             )
-            # DOAR comenzi noi (1) și in progress (2)
-            print(f"[REFRESH][EMAG] Fetching ONLY 'new' (1) and 'in progress' (2) orders")
-            new_orders = await client.fetch_orders(statuses=[1, 2])
+            # Comenzi noi (1), in progress (2) și prepared (3)
+            print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders")
+            new_orders = await client.fetch_orders(statuses=[1, 2, 3])
         elif platform == 2:
             print(f"[REFRESH] Fetching Trendyol orders")
             try:
