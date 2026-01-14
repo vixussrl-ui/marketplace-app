@@ -843,7 +843,7 @@ async def test_trendyol(credential_id: int, request: Request):
 
 @app.post("/orders/refresh")
 async def refresh_orders(request: Request):
-    print(f"[REFRESH] ===== VM DEPLOYMENT TEST - Refresh request started =====")
+    print(f"[REFRESH] Refresh request started")
     user = get_current_user(request)
 
     try:

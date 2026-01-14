@@ -438,14 +438,25 @@ export default function OrdersPage() {
           />
         </div>
       </Tooltip>
-      <Button
-        icon={<ReloadOutlined />}
-        onClick={() => handleRefresh(false)}
-        loading={loading}
-        style={theme.BUTTON_STYLES.secondary}
-      >
-        Refresh
-      </Button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => handleRefresh(false)}
+          loading={loading}
+          style={theme.BUTTON_STYLES.secondary}
+        >
+          Refresh
+        </Button>
+        {lastRefreshTime && (
+          <span style={{ 
+            fontSize: '12px', 
+            color: theme.COLORS.text.light,
+            whiteSpace: 'nowrap'
+          }}>
+            <ClockCircleOutlined /> {new Date(lastRefreshTime).toLocaleTimeString('ro-RO')}
+          </span>
+        )}
+      </div>
     </Space>
   );
 
