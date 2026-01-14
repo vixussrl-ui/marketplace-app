@@ -60,6 +60,8 @@ export default function OrdersPage() {
       return 'Trendyol';
     } else if (cred.platform === 3) {
       return 'Oblio';
+    } else if (cred.platform === 4) {
+      return 'Etsy';
     }
     return cred.account_label || `Credential ${cred.id}`;
   };
@@ -76,6 +78,8 @@ export default function OrdersPage() {
       return '#00d4ff'; // Cyan pentru Trendyol
     } else if (cred.platform === 3) {
       return '#10b981'; // Green pentru Oblio
+    } else if (cred.platform === 4) {
+      return '#f59e0b'; // Amber pentru Etsy
     }
     return '#6b7280'; // Gray default
   };
@@ -91,6 +95,8 @@ export default function OrdersPage() {
       return '#00d4ff'; // Cyan pentru Trendyol
     } else if (marketplaceUpper === 'OBLIO') {
       return '#10b981'; // Green pentru Oblio
+    } else if (marketplaceUpper === 'ETSY') {
+      return '#f59e0b'; // Amber pentru Etsy
     }
     return '#6b7280'; // Gray default
   };
@@ -166,7 +172,7 @@ export default function OrdersPage() {
             ...order,
             marketplace: cred.platform === 1 
               ? (getCredentialDisplayName(cred).toUpperCase()) 
-              : (cred.platform === 2 ? 'TRENDYOL' : 'OBLIO'),
+              : (cred.platform === 2 ? 'TRENDYOL' : (cred.platform === 4 ? 'ETSY' : 'OBLIO')),
             credentialId: cred.id
           }));
           allOrders.push(...ordersWithMarketplace);

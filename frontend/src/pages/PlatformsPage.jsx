@@ -300,22 +300,22 @@ export default function PlatformsPage() {
               style={theme.INPUT_STYLES.base}
             />
           </Form.Item>
-        <Form.Item 
-          label={<span style={theme.INPUT_STYLES.label}>Platform</span>}
-          name="platform_id" 
-          rules={[{ required: true, message: 'Please select platform' }]}
-        >
-          <Select 
-            placeholder="Select platform"
-            style={{ borderRadius: theme.RADIUS.md }}
+          <Form.Item 
+            label={<span style={theme.INPUT_STYLES.label}>Platform</span>}
+            name="platform_id" 
+            rules={[{ required: true, message: 'Please select platform' }]}
           >
-            {platforms.map(p => (
-              <Select.Option key={p.id} value={p.id}>
-                {p.display_name}
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
+            <Select 
+              placeholder="Select platform"
+              style={{ borderRadius: theme.RADIUS.md }}
+            >
+              {platforms.map(p => (
+                <Select.Option key={p.id} value={p.id}>
+                  {p.display_name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
         {selectedPlatform === 1 && (
           <div style={{ 
             marginTop: -8, 
@@ -354,6 +354,8 @@ export default function PlatformsPage() {
             placeholder={
               selectedPlatform === 2
                 ? 'Trendyol API key'
+                : selectedPlatform === 4
+                ? 'Etsy Access Token (OAuth)'
                 : 'email@example.com'
             }
             style={theme.INPUT_STYLES.base}
@@ -368,6 +370,8 @@ export default function PlatformsPage() {
             placeholder={
               selectedPlatform === 2
                 ? 'Trendyol API secret'
+                : selectedPlatform === 4
+                ? 'Etsy API Key (optional)'
                 : 'password'
             }
             style={theme.INPUT_STYLES.base}
@@ -383,6 +387,8 @@ export default function PlatformsPage() {
             placeholder={
               selectedPlatform === 2
                 ? 'Trendyol Seller ID (Entity ID)'
+                : selectedPlatform === 4
+                ? 'Etsy Shop ID'
                 : 'vendor_code'
             }
             inputMode="text"
@@ -393,6 +399,11 @@ export default function PlatformsPage() {
         {selectedPlatform === 2 && (
           <div style={{ marginTop: 6, color: theme.COLORS.text.light, fontSize: 12 }}>
             For Trendyol use: Client ID = API key, Client Secret = API secret, Vendor Code = Seller ID (Entity ID).
+          </div>
+        )}
+        {selectedPlatform === 4 && (
+          <div style={{ marginTop: 6, color: theme.COLORS.text.light, fontSize: 12 }}>
+            For Etsy use: Client ID = OAuth Access Token, Vendor Code = Shop ID. Get your access token from Etsy Developer Portal.
           </div>
         )}
       </Form>

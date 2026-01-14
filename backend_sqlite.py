@@ -357,6 +357,126 @@ class TrendyolClient:
             return str(timestamp_ms)
 
 
+# Etsy Client
+class EtsyClient:
+    def __init__(self, access_token, shop_id):
+        self.access_token = access_token
+        self.shop_id = shop_id
+        self.base_url = "https://api.etsy.com/v3"
+        self.status_map = {
+            "open": "new",
+            "payment_processing": "payment processing",
+            "payment_review": "payment review",
+            "canceled": "canceled",
+            "completed": "completed",
+            "refunded": "refunded",
+        }
+
+    def _get_auth_header(self):
+        return f"Bearer {self.access_token}"
+
+    async def fetch_orders(self, min_created=None, max_created=None, limit=100, offset=0):
+        """
+        Fetch orders (receipts) from Etsy shop
+        Etsy API v3 endpoint: GET /application/shops/{shop_id}/receipts
+        """
+        try:
+            url = f"{self.base_url}/application/shops/{self.shop_id}/receipts"
+            params = {
+                "limit": limit,
+                "offset": offset,
+            }
+            if min_created:
+                params["min_created"] = int(min_created)
+            if max_created:
+                params["max_created"] = int(max_created)
+
+            headers = {
+                "Authorization": self._get_auth_header(),
+                "x-api-key": self.access_token,  # Etsy API v3 necesită x-api-key pentru autentificare
+                "Content-Type": "application/json",
+            }
+
+            print(f"[ETSY] Fetching orders from {url} with params: {params}")
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, headers=headers, params=params)
+                print(f"[ETSY] Response status: {response.status_code}")
+
+                if response.status_code == 401:
+                    print(f"[ERROR] ETSY Authentication failed (401)")
+                    return [], 0, 0
+
+                response.raise_for_status()
+                data = response.json()
+
+                orders = []
+                raw_orders = data.get("results", [])
+                count = data.get("count", len(raw_orders))
+                
+                print(f"[ETSY] Processing {len(raw_orders)} orders (offset {offset}, count: {count})")
+
+                for receipt in raw_orders:
+                    # Etsy folosește "receipt_type" pentru status
+                    receipt_type = receipt.get("receipt_type", "unknown")
+                    if receipt_type == "open":
+                        status_text = "new"
+                    elif receipt_type == "payment_processing":
+                        status_text = "payment processing"
+                    elif receipt_type == "payment_review":
+                        status_text = "payment review"
+                    elif receipt_type == "completed":
+                        status_text = "completed"
+                    elif receipt_type == "canceled":
+                        status_text = "canceled"
+                    elif receipt_type == "refunded":
+                        status_text = "refunded"
+                    else:
+                        status_text = receipt_type
+
+                    items = []
+                    for transaction in receipt.get("transactions", []):
+                        item_data = {
+                            "sku": transaction.get("product_data", {}).get("sku") 
+                                or transaction.get("listing_id", ""),
+                            "name": transaction.get("title") or "Unknown Product",
+                            "qty": transaction.get("quantity", 0),
+                            "price": float(transaction.get("price", {}).get("amount", 0)) / 100 
+                                if transaction.get("price", {}).get("amount") else 0,
+                        }
+                        items.append(item_data)
+
+                    # Convertim timestamp-ul Etsy (Unix timestamp în secunde)
+                    created_timestamp = receipt.get("creation_timestamp")
+                    created_at = None
+                    if created_timestamp:
+                        try:
+                            dt = datetime.fromtimestamp(int(created_timestamp))
+                            created_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            created_at = str(created_timestamp)
+
+                    order_data = {
+                        "order_id": str(receipt.get("receipt_id")),
+                        "status": status_text,
+                        "order_type": 3,
+                        "vendor_code": "etsy",
+                        "created_at": created_at,
+                        "items": items,
+                    }
+                    orders.append(order_data)
+
+                print(f"[OK] Successfully parsed {len(orders)} Etsy orders")
+                # Etsy returnează count, nu total_pages
+                total_pages = (count + limit - 1) // limit if count > 0 else 1
+                return orders, total_pages, count
+        except Exception as e:
+            print(f"[ERROR] Error fetching Etsy orders: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], 0, 0
+
+
 # Oblio Client (pentru stocuri)
 class OblioClient:
     def __init__(self, cif, email, client_secret):
@@ -597,6 +717,7 @@ async def get_platforms():
         {"id": 1, "name": "emag", "display_name": "eMAG", "is_active": True},
         {"id": 2, "name": "trendyol", "display_name": "Trendyol", "is_active": True},
         {"id": 3, "name": "oblio", "display_name": "Oblio (Stocuri)", "is_active": True},
+        {"id": 4, "name": "etsy", "display_name": "Etsy", "is_active": True},
     ]
 
 
@@ -613,7 +734,7 @@ async def create_credential(request: Request, data: dict):
         raise HTTPException(
             status_code=400, detail="account_label and platform_id are required"
         )
-    if platform_id not in (1, 2, 3):
+    if platform_id not in (1, 2, 3, 4):
         raise HTTPException(status_code=400, detail="Invalid platform_id")
     if not vendor_code:
         raise HTTPException(status_code=400, detail="vendor_code is required")
@@ -718,7 +839,7 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
     # Statusuri permise:
     # EMAG: "new" (1), "in progress" (2), "prepared" (3) și "finalized" (4)
     # Trendyol: "new" (Created), "processing" (Picking), "invoiced" (Invoiced)
-    allowed_statuses = ['new', 'in progress', 'prepared', 'finalized', 'processing', 'invoiced']
+    allowed_statuses = ['new', 'in progress', 'prepared', 'finalized', 'processing', 'invoiced', 'payment processing', 'payment review']
     
     if credential_id:
         cur = conn.execute(
@@ -950,6 +1071,51 @@ async def refresh_orders(request: Request):
                             break
             except Exception as trendyol_error:
                 print(f"[REFRESH] Trendyol error: {trendyol_error}")
+                import traceback
+                traceback.print_exc()
+                new_orders = []
+        elif platform == 4:
+            print(f"[REFRESH] Fetching Etsy orders")
+            try:
+                # Etsy folosește access_token (OAuth) și shop_id
+                # client_id = access_token, vendor_code = shop_id
+                client = EtsyClient(
+                    access_token=cred_d.get("client_id", ""),
+                    shop_id=cred_d.get("vendor_code", ""),
+                )
+                print(f"[REFRESH] EtsyClient created successfully")
+                
+                # Preluăm comenzile noi (open, payment_processing, payment_review)
+                print(f"[REFRESH][ETSY] Fetching orders with status 'open', 'payment_processing', 'payment_review'")
+                new_orders = []
+                offset = 0
+                limit = 100
+                max_iterations = 100  # Limita de siguranță
+                iteration = 0
+                
+                while iteration < max_iterations:
+                    orders_batch, total_pages, total_count = await client.fetch_orders(
+                        limit=limit, offset=offset
+                    )
+                    if not orders_batch:
+                        print(f"[REFRESH] No more Etsy orders at offset {offset}")
+                        break
+                    
+                    # Filtrăm doar comenzile active (new, payment processing, payment review)
+                    active_orders = [o for o in orders_batch if o.get("status") in ["new", "payment processing", "payment review"]]
+                    new_orders.extend(active_orders)
+                    
+                    print(f"[REFRESH] Got {len(orders_batch)} Etsy orders at offset {offset} (filtered to {len(active_orders)} active), total: {total_count}")
+                    
+                    offset += limit
+                    iteration += 1
+                    
+                    # Dacă am primit mai puține comenzi decât limit-ul, am ajuns la final
+                    if len(orders_batch) < limit:
+                        break
+                        
+            except Exception as etsy_error:
+                print(f"[REFRESH] Etsy error: {etsy_error}")
                 import traceback
                 traceback.print_exc()
                 new_orders = []
