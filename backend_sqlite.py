@@ -883,7 +883,7 @@ async def refresh_orders(request: Request):
                 vendor_code=cred_d["vendor_code"],
             )
             # Comenzi noi (1), in progress (2) și prepared (3)
-            print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders")
+            print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders for credential_id {cred_id}")
             new_orders = []
             page = 1
             max_pages = 100  # Limita de siguranță
@@ -893,7 +893,9 @@ async def refresh_orders(request: Request):
                     print(f"[REFRESH] No more orders at page {page}")
                     break
                 new_orders.extend(orders_batch)
-                print(f"[REFRESH] Got {len(orders_batch)} orders at page {page}/{total_pages} (total: {total_count})")
+                # Log toate order IDs pentru debugging
+                order_ids = [str(o.get("order_id", "")) for o in orders_batch]
+                print(f"[REFRESH] Got {len(orders_batch)} orders at page {page}/{total_pages} (total: {total_count}), Order IDs: {order_ids}")
                 page += 1
                 if page > total_pages:
                     print(f"[REFRESH] Reached last page ({total_pages})")
