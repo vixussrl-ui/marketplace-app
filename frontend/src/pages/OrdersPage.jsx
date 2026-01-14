@@ -17,29 +17,68 @@ export default function OrdersPage() {
   const [oblioStock, setOblioStock] = useState({});
   const [loadingStock, setLoadingStock] = useState(false);
   
-  // Toggle-uri pentru integrare (salvate în localStorage)
-  const [emagEnabled, setEmagEnabled] = useState(() => {
-    const saved = localStorage.getItem('emagEnabled');
-    return saved !== null ? saved === 'true' : true; // default true
-  });
-  const [trendyolEnabled, setTrendyolEnabled] = useState(() => {
-    const saved = localStorage.getItem('trendyolEnabled');
-    return saved !== null ? saved === 'true' : true; // default true
-  });
+  // Toggle-uri dinamice pentru fiecare credential (salvate în localStorage)
+  const [credentialToggles, setCredentialToggles] = useState({});
   
   const autoRefreshTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
 
   const userId = localStorage.getItem('user_id');
   
-  // Salvează toggle-urile în localStorage când se schimbă
+  // Inițializează toggle-urile pentru credentialele existente
   useEffect(() => {
-    localStorage.setItem('emagEnabled', emagEnabled.toString());
-  }, [emagEnabled]);
+    if (credentials.length > 0) {
+      const toggles = {};
+      credentials.forEach(cred => {
+        const key = `credential_${cred.id}_enabled`;
+        const saved = localStorage.getItem(key);
+        toggles[cred.id] = saved !== null ? saved === 'true' : true; // default true
+      });
+      setCredentialToggles(toggles);
+    }
+  }, [credentials]);
   
-  useEffect(() => {
-    localStorage.setItem('trendyolEnabled', trendyolEnabled.toString());
-  }, [trendyolEnabled]);
+  // Salvează toggle-urile în localStorage când se schimbă
+  const updateCredentialToggle = (credentialId, enabled) => {
+    setCredentialToggles(prev => {
+      const newToggles = { ...prev, [credentialId]: enabled };
+      localStorage.setItem(`credential_${credentialId}_enabled`, enabled.toString());
+      return newToggles;
+    });
+  };
+  
+  // Obține numele afișat pentru un credential
+  const getCredentialDisplayName = (cred) => {
+    if (cred.platform === 1) {
+      // eMAG - verifică dacă este Ungaria sau România
+      const label = cred.account_label?.toUpperCase() || '';
+      if (label.includes('HU') || label.includes('HUNGARY') || label.includes('UNGARIA') || label.includes('EMAG.HU')) {
+        return 'eMAG HU';
+      }
+      return 'eMAG RO';
+    } else if (cred.platform === 2) {
+      return 'Trendyol';
+    } else if (cred.platform === 3) {
+      return 'Oblio';
+    }
+    return cred.account_label || `Credential ${cred.id}`;
+  };
+  
+  // Obține culoarea pentru un credential
+  const getCredentialColor = (cred) => {
+    if (cred.platform === 1) {
+      const label = cred.account_label?.toUpperCase() || '';
+      if (label.includes('HU') || label.includes('HUNGARY') || label.includes('UNGARIA') || label.includes('EMAG.HU')) {
+        return '#8b5cf6'; // Purple pentru eMAG HU
+      }
+      return '#ff6b35'; // Orange pentru eMAG RO
+    } else if (cred.platform === 2) {
+      return '#00d4ff'; // Cyan pentru Trendyol
+    } else if (cred.platform === 3) {
+      return '#10b981'; // Green pentru Oblio
+    }
+    return '#6b7280'; // Gray default
+  };
 
   useEffect(() => {
     loadCredentials();
@@ -110,7 +149,9 @@ export default function OrdersPage() {
           const res = await ordersAPI.list(userId, { credential_id: cred.id });
           const ordersWithMarketplace = (res.data || []).map(order => ({
             ...order,
-            marketplace: cred.platform === 1 ? 'EMAG' : 'Trendyol',
+            marketplace: cred.platform === 1 
+              ? (getCredentialDisplayName(cred).toUpperCase()) 
+              : (cred.platform === 2 ? 'TRENDYOL' : 'OBLIO'),
             credentialId: cred.id
           }));
           allOrders.push(...ordersWithMarketplace);
@@ -323,17 +364,14 @@ export default function OrdersPage() {
     },
   ];
 
-  // Filtrează orders în funcție de toggle-uri active
+  // Filtrează orders în funcție de toggle-uri active pentru fiecare credential
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
-      if (order.marketplace === 'EMAG') {
-        return emagEnabled;
-      } else if (order.marketplace === 'Trendyol') {
-        return trendyolEnabled;
-      }
-      return true; // Alte platforme rămân
+      const credentialId = order.credentialId;
+      // Dacă nu există toggle pentru acest credential, afișăm comanda (default true)
+      return credentialToggles[credentialId] !== false;
     });
-  }, [orders, emagEnabled, trendyolEnabled]);
+  }, [orders, credentialToggles]);
 
   const productSummary = useMemo(() => {
     const emagProducts = {};
@@ -401,34 +439,37 @@ export default function OrdersPage() {
   // Funcție helper pentru toolbar (folosită în Order Dashboard și Product Summary)
   const renderToolbar = () => (
     <Space size="small" className="toolbar" wrap>
-      {/* Toggle-uri pentru integrare */}
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: '12px',
-        padding: '4px 12px',
-        background: '#fafafa',
-        borderRadius: '6px',
-        border: '1px solid #e5e7eb'
-      }}>
-        <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '12px', color: '#ff6b35', fontWeight: 500 }}>eMAG</span>
-          <Switch 
-            size="small"
-            checked={emagEnabled}
-            onChange={setEmagEnabled}
-          />
+      {/* Toggle-uri dinamice pentru fiecare integrare */}
+      {credentials.length > 0 && (
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '12px',
+          padding: '4px 12px',
+          background: '#fafafa',
+          borderRadius: '6px',
+          border: '1px solid #e5e7eb',
+          flexWrap: 'wrap'
+        }}>
+          <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
+          {credentials.map(cred => {
+            const displayName = getCredentialDisplayName(cred);
+            const color = getCredentialColor(cred);
+            const isEnabled = credentialToggles[cred.id] !== false;
+            
+            return (
+              <div key={cred.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: color, fontWeight: 500 }}>{displayName}</span>
+                <Switch 
+                  size="small"
+                  checked={isEnabled}
+                  onChange={(checked) => updateCredentialToggle(cred.id, checked)}
+                />
+              </div>
+            );
+          })}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '12px', color: '#00d4ff', fontWeight: 500 }}>Trendyol</span>
-          <Switch 
-            size="small"
-            checked={trendyolEnabled}
-            onChange={setTrendyolEnabled}
-          />
-        </div>
-      </div>
+      )}
       <Tooltip title={autoRefreshEnabled ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}>
         <div style={{ 
           display: 'flex', 
