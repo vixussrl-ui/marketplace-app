@@ -924,15 +924,41 @@ async def refresh_orders(request: Request):
                 while page <= max_pages:
                     orders_batch, total_pages, total_count = await client.fetch_orders(statuses=[4], page=page)
                     if not orders_batch:
+                        print(f"[REFRESH][EMAG] No more finalized orders at page {page}")
                         break
                     found_order = [o for o in orders_batch if "1135289421" in str(o.get("order_id", ""))]
                     if found_order:
                         print(f"[REFRESH][EMAG] FOUND order 1135289421 in finalized orders! Adding to list...")
                         new_orders.extend(orders_batch)
                         break
+                    else:
+                        order_ids = [str(o.get("order_id", "")) for o in orders_batch]
+                        print(f"[REFRESH][EMAG] Finalized orders batch page {page}: {len(order_ids)} orders, IDs: {order_ids[:10]}...")
                     page += 1
                     if page > total_pages:
+                        print(f"[REFRESH][EMAG] Reached last page ({total_pages}) for finalized orders")
                         break
+                
+                # Dacă tot nu am găsit, încercăm și cu statusurile 0 (canceled) și 5 (returned)
+                if not any("1135289421" in str(o.get("order_id", "")) for o in new_orders):
+                    print(f"[REFRESH][EMAG] Order 1135289421 still not found. Trying status 0 (canceled) and 5 (returned)...")
+                    for status_to_try in [0, 5]:
+                        print(f"[REFRESH][EMAG] Trying status {status_to_try}...")
+                        page = 1
+                        while page <= 10:  # Limita mai mică pentru statusuri rare
+                            orders_batch, total_pages, total_count = await client.fetch_orders(statuses=[status_to_try], page=page)
+                            if not orders_batch:
+                                break
+                            found_order = [o for o in orders_batch if "1135289421" in str(o.get("order_id", ""))]
+                            if found_order:
+                                print(f"[REFRESH][EMAG] FOUND order 1135289421 in status {status_to_try}! Adding to list...")
+                                new_orders.extend(orders_batch)
+                                break
+                            page += 1
+                            if page > total_pages:
+                                break
+                        if any("1135289421" in str(o.get("order_id", "")) for o in new_orders):
+                            break
         elif platform == 2:
             print(f"[REFRESH] Fetching Trendyol orders")
             try:
