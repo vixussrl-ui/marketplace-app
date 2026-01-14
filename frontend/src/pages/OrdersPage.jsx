@@ -118,7 +118,28 @@ export default function OrdersPage() {
           console.error(`Failed to load orders for credential ${cred.id}:`, error);
         }
       }
-      const sorted = allOrders.sort((a, b) => {
+      // Eliminăm duplicatele bazate pe platform_order_id și marketplace
+      const seenOrders = new Map();
+      const uniqueOrders = [];
+      for (const order of allOrders) {
+        const key = `${order.platform_order_id}-${order.marketplace}`;
+        if (!seenOrders.has(key)) {
+          seenOrders.set(key, order);
+          uniqueOrders.push(order);
+        } else {
+          // Dacă există deja, păstrăm cea mai recentă (sau cea cu credential_id mai mic pentru consistență)
+          const existing = seenOrders.get(key);
+          const existingDate = new Date(existing.created_at || 0);
+          const newDate = new Date(order.created_at || 0);
+          if (newDate > existingDate || (newDate.getTime() === existingDate.getTime() && order.credentialId < existing.credentialId)) {
+            const index = uniqueOrders.indexOf(existing);
+            uniqueOrders[index] = order;
+            seenOrders.set(key, order);
+          }
+        }
+      }
+      
+      const sorted = uniqueOrders.sort((a, b) => {
         const dateA = new Date(a.created_at || 0);
         const dateB = new Date(b.created_at || 0);
         return dateB - dateA;
