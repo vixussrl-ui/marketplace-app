@@ -57,7 +57,12 @@ export default function OrdersPage() {
       }
       return 'eMAG RO';
     } else if (cred.platform === 2) {
-      return 'Trendyol';
+      // Trendyol - verifică dacă este Grecia sau România
+      const label = cred.account_label?.toUpperCase() || '';
+      if (label.includes('GR') || label.includes('GREECE') || label.includes('GRECIA') || label.includes('TRENDYOL.GR')) {
+        return 'Trendyol GR';
+      }
+      return 'Trendyol RO';
     } else if (cred.platform === 3) {
       return 'Oblio';
     } else if (cred.platform === 4) {
@@ -75,7 +80,11 @@ export default function OrdersPage() {
       }
       return '#ff6b35'; // Orange pentru eMAG RO
     } else if (cred.platform === 2) {
-      return '#00d4ff'; // Cyan pentru Trendyol
+      const label = cred.account_label?.toUpperCase() || '';
+      if (label.includes('GR') || label.includes('GREECE') || label.includes('GRECIA') || label.includes('TRENDYOL.GR')) {
+        return '#ef4444'; // Red pentru Trendyol GR
+      }
+      return '#00d4ff'; // Cyan pentru Trendyol RO
     } else if (cred.platform === 3) {
       return '#10b981'; // Green pentru Oblio
     } else if (cred.platform === 4) {
@@ -91,8 +100,10 @@ export default function OrdersPage() {
       return '#ff6b35'; // Orange pentru eMAG RO
     } else if (marketplaceUpper === 'EMAG HU') {
       return '#8b5cf6'; // Purple pentru eMAG HU
-    } else if (marketplaceUpper === 'TRENDYOL') {
-      return '#00d4ff'; // Cyan pentru Trendyol
+    } else if (marketplaceUpper === 'TRENDYOL RO' || marketplaceUpper === 'TRENDYOL') {
+      return '#00d4ff'; // Cyan pentru Trendyol RO
+    } else if (marketplaceUpper === 'TRENDYOL GR') {
+      return '#ef4444'; // Red pentru Trendyol GR
     } else if (marketplaceUpper === 'OBLIO') {
       return '#10b981'; // Green pentru Oblio
     } else if (marketplaceUpper === 'ETSY') {
@@ -168,13 +179,34 @@ export default function OrdersPage() {
       for (const cred of credentials) {
         try {
           const res = await ordersAPI.list(userId, { credential_id: cred.id });
-          const ordersWithMarketplace = (res.data || []).map(order => ({
-            ...order,
-            marketplace: cred.platform === 1 
-              ? (getCredentialDisplayName(cred).toUpperCase()) 
-              : (cred.platform === 2 ? 'TRENDYOL' : (cred.platform === 4 ? 'ETSY' : 'OBLIO')),
-            credentialId: cred.id
-          }));
+          const ordersWithMarketplace = (res.data || []).map(order => {
+            // Pentru Trendyol, extragem țara din vendor_code (trendyol_ro sau trendyol_gr)
+            let marketplace = '';
+            if (cred.platform === 1) {
+              marketplace = getCredentialDisplayName(cred).toUpperCase();
+            } else if (cred.platform === 2) {
+              // Extragem țara din vendor_code
+              const vendorCode = order.vendor_code || '';
+              if (vendorCode.includes('trendyol_gr')) {
+                marketplace = 'TRENDYOL GR';
+              } else if (vendorCode.includes('trendyol_ro')) {
+                marketplace = 'TRENDYOL RO';
+              } else {
+                // Fallback la account_label dacă vendor_code nu conține țara
+                marketplace = getCredentialDisplayName(cred).toUpperCase();
+              }
+            } else if (cred.platform === 4) {
+              marketplace = 'ETSY';
+            } else {
+              marketplace = 'OBLIO';
+            }
+            
+            return {
+              ...order,
+              marketplace,
+              credentialId: cred.id
+            };
+          });
           allOrders.push(...ordersWithMarketplace);
         } catch (error) {
           console.error(`Failed to load orders for credential ${cred.id}:`, error);

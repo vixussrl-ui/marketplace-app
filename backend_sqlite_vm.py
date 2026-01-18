@@ -309,6 +309,33 @@ class TrendyolClient:
                         order.get("status"), order.get("status", "unknown")
                     )
 
+                    # Detectăm țara bazat pe câmpurile disponibile în răspunsul API
+                    country_code = None
+                    # Încearcă să găsească countryCode în diferite locații
+                    if "shipmentAddress" in order and order["shipmentAddress"]:
+                        country_code = order["shipmentAddress"].get("countryCode")
+                    if not country_code and "invoiceAddress" in order and order["invoiceAddress"]:
+                        country_code = order["invoiceAddress"].get("countryCode")
+                    if not country_code and "address" in order and order["address"]:
+                        country_code = order["address"].get("countryCode")
+                    if not country_code and "storeFrontCode" in order:
+                        store_front = order.get("storeFrontCode", "").upper()
+                        if store_front == "GR":
+                            country_code = "GR"
+                        elif store_front == "RO":
+                            country_code = "RO"
+                    
+                    # Log pentru debugging (doar pentru primele comenzi)
+                    if len(orders) < 3:
+                        print(f"[TRENDYOL] Order {order.get('orderNumber')} - Full order keys: {list(order.keys())}")
+                        if "shipmentAddress" in order:
+                            print(f"[TRENDYOL] Order {order.get('orderNumber')} - shipmentAddress: {order.get('shipmentAddress')}")
+                        if "invoiceAddress" in order:
+                            print(f"[TRENDYOL] Order {order.get('orderNumber')} - invoiceAddress: {order.get('invoiceAddress')}")
+                        if "storeFrontCode" in order:
+                            print(f"[TRENDYOL] Order {order.get('orderNumber')} - storeFrontCode: {order.get('storeFrontCode')}")
+                        print(f"[TRENDYOL] Order {order.get('orderNumber')} - Detected country_code: {country_code}")
+
                     items = []
                     for line in order.get("lines", []):
                         item_data = {
@@ -323,13 +350,27 @@ class TrendyolClient:
                         }
                         items.append(item_data)
 
+                    # Determină marketplace-ul bazat pe country_code
+                    marketplace_country = "RO"  # Default
+                    if country_code:
+                        country_upper = str(country_code).upper()
+                        if country_upper in ["GR", "GREECE", "GRECIA"]:
+                            marketplace_country = "GR"
+                        elif country_upper in ["RO", "ROMANIA", "ROMÂNIA"]:
+                            marketplace_country = "RO"
+
+                    # Setăm vendor_code cu țara pentru a putea diferenția în frontend
+                    vendor_code_with_country = f"trendyol_{marketplace_country.lower()}"
+
                     order_data = {
                         "order_id": str(order.get("orderNumber")),
                         "status": status_text,
                         "order_type": 3,
-                        "vendor_code": "trendyol",
+                        "vendor_code": vendor_code_with_country,  # "trendyol_ro" sau "trendyol_gr"
                         "created_at": self._convert_timestamp(order.get("orderDate")),
                         "items": items,
+                        "country_code": country_code,  # Salvăm country_code pentru debugging
+                        "marketplace_country": marketplace_country,  # RO sau GR
                     }
                     orders.append(order_data)
 
