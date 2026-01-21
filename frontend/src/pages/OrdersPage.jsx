@@ -437,11 +437,15 @@ export default function OrdersPage() {
     filteredOrders.forEach(order => {
       order.items?.forEach(item => {
         const qty = item.qty || item.quantity || 0;
-        if (order.marketplace === 'EMAG') {
+        const marketplaceUpper = (order.marketplace || '').toUpperCase();
+        // Verificăm dacă marketplace-ul începe cu 'EMAG' (pentru 'EMAG RO', 'EMAG HU', etc.)
+        if (marketplaceUpper.startsWith('EMAG')) {
           emagProducts[item.sku] = (emagProducts[item.sku] || 0) + qty;
-        } else {
+        } else if (marketplaceUpper.startsWith('TRENDYOL')) {
+          // Verificăm dacă marketplace-ul începe cu 'TRENDYOL' (pentru 'TRENDYOL RO', 'TRENDYOL GR', etc.)
           trendyolProducts[item.sku] = (trendyolProducts[item.sku] || 0) + qty;
         }
+        // Dacă nu este nici EMAG nici TRENDYOL (ex: ETSY, OBLIO), nu îl adăugăm
       });
     });
     
