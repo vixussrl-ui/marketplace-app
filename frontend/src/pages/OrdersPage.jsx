@@ -306,15 +306,21 @@ export default function OrdersPage() {
 
     // Trendyol: open partner page by country
     if (marketplace.startsWith('TRENDYOL')) {
-      // Preferăm vendor_code (trendyol_gr / trendyol_ro), e mai robust decât textul din UI
+      // Folosim exact aceeași logică de detecție ca la etichetare:
+      // 1) vendor_code: trendyol_gr / trendyol_ro
+      // 2) fallback pe textul marketplace-ului (TRENDYOL GR / TRENDYOL RO)
       let country = 'ro';
+
       if (vendorCodeLower.includes('trendyol_gr')) {
         country = 'gr';
       } else if (vendorCodeLower.includes('trendyol_ro')) {
         country = 'ro';
       } else if (marketplace.includes(' GR')) {
         country = 'gr';
+      } else if (marketplace.includes(' RO')) {
+        country = 'ro';
       }
+
       const url = `https://partner.trendyol.com/${country}/orders/shipment-packages/created`;
       window.open(url, '_blank');
       return;
