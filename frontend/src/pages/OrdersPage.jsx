@@ -315,9 +315,10 @@ export default function OrdersPage() {
         country = 'gr';
       } else if (vendorCodeLower.includes('trendyol_ro')) {
         country = 'ro';
-      } else if (marketplace.includes(' GR')) {
+      } else if (marketplace.includes('GR')) {
+        // Match any variant containing GR (e.g. 'TRENDYOL GR', 'TRENDYOL_GR', etc.)
         country = 'gr';
-      } else if (marketplace.includes(' RO')) {
+      } else if (marketplace.includes('RO')) {
         country = 'ro';
       }
 
