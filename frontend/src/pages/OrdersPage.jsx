@@ -22,6 +22,8 @@ export default function OrdersPage() {
   
   const autoRefreshTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
+  const initialSyncDoneRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
 
   const userId = localStorage.getItem('user_id');
   
@@ -124,7 +126,15 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (credentials.length > 0) {
-      loadAllOrders();
+      // Important:
+      // - on first page load, we want the SAME behavior as the Refresh button (sync from marketplaces)
+      // - afterwards (e.g. credentials edited), we can just load what exists in DB
+      if (!initialSyncDoneRef.current) {
+        initialSyncDoneRef.current = true;
+        handleRefresh(true); // silent initial sync
+      } else {
+        loadAllOrders();
+      }
     }
   }, [credentials]);
 
@@ -305,6 +315,11 @@ export default function OrdersPage() {
   };
 
   const handleRefresh = async (silent = false) => {
+    // Avoid overlapping refreshes (auto-refresh + manual click + initial sync)
+    if (refreshInFlightRef.current) {
+      return;
+    }
+    refreshInFlightRef.current = true;
     setLoading(true);
     try {
       for (const cred of credentials) {
@@ -329,6 +344,7 @@ export default function OrdersPage() {
       message.error('Failed to refresh: ' + error.message);
     } finally {
       setLoading(false);
+      refreshInFlightRef.current = false;
     }
   };
 
