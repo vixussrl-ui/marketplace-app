@@ -302,10 +302,19 @@ export default function OrdersPage() {
     const orderType = record.order_type || 3;
     
     const marketplace = record.marketplace?.toUpperCase() || '';
+    const vendorCodeLower = vendorCode.toLowerCase();
 
     // Trendyol: open partner page by country
     if (marketplace.startsWith('TRENDYOL')) {
-      const country = marketplace.includes(' GR') ? 'gr' : 'ro';
+      // Preferăm vendor_code (trendyol_gr / trendyol_ro), e mai robust decât textul din UI
+      let country = 'ro';
+      if (vendorCodeLower.includes('trendyol_gr')) {
+        country = 'gr';
+      } else if (vendorCodeLower.includes('trendyol_ro')) {
+        country = 'ro';
+      } else if (marketplace.includes(' GR')) {
+        country = 'gr';
+      }
       const url = `https://partner.trendyol.com/${country}/orders/shipment-packages/created`;
       window.open(url, '_blank');
       return;
