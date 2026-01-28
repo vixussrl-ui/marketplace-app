@@ -50,10 +50,12 @@ export default function OrdersPage() {
   // Obține numele afișat pentru un credential
   const getCredentialDisplayName = (cred) => {
     if (cred.platform === 1) {
-      // eMAG - verifică dacă este Ungaria sau România
+      // eMAG - verifică dacă este Ungaria, Bulgaria sau România
       const label = cred.account_label?.toUpperCase() || '';
       if (label.includes('HU') || label.includes('HUNGARY') || label.includes('UNGARIA') || label.includes('EMAG.HU')) {
         return 'eMAG HU';
+      } else if (label.includes('BG') || label.includes('BULGARIA') || label.includes('BULGARIA') || label.includes('EMAG.BG')) {
+        return 'eMAG BG';
       }
       return 'eMAG RO';
     } else if (cred.platform === 2) {
@@ -77,6 +79,8 @@ export default function OrdersPage() {
       const label = cred.account_label?.toUpperCase() || '';
       if (label.includes('HU') || label.includes('HUNGARY') || label.includes('UNGARIA') || label.includes('EMAG.HU')) {
         return '#8b5cf6'; // Purple pentru eMAG HU
+      } else if (label.includes('BG') || label.includes('BULGARIA') || label.includes('BULGARIA') || label.includes('EMAG.BG')) {
+        return '#10b981'; // Green pentru eMAG BG
       }
       return '#ff6b35'; // Orange pentru eMAG RO
     } else if (cred.platform === 2) {
@@ -100,6 +104,8 @@ export default function OrdersPage() {
       return '#ff6b35'; // Orange pentru eMAG RO
     } else if (marketplaceUpper === 'EMAG HU') {
       return '#8b5cf6'; // Purple pentru eMAG HU
+    } else if (marketplaceUpper === 'EMAG BG') {
+      return '#10b981'; // Green pentru eMAG BG
     } else if (marketplaceUpper === 'TRENDYOL RO' || marketplaceUpper === 'TRENDYOL') {
       return '#00d4ff'; // Cyan pentru Trendyol RO
     } else if (marketplaceUpper === 'TRENDYOL GR') {
@@ -284,7 +290,17 @@ export default function OrdersPage() {
     const orderId = record.platform_order_id || record.order_id;
     const vendorCode = record.vendor_code || '';
     const orderType = record.order_type || 3;
-    const url = `https://marketplace.emag.ro/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
+    
+    // Determină domeniul bazat pe marketplace
+    const marketplace = record.marketplace?.toUpperCase() || '';
+    let domain = 'ro'; // default
+    if (marketplace === 'EMAG HU') {
+      domain = 'hu';
+    } else if (marketplace === 'EMAG BG') {
+      domain = 'bg';
+    }
+    
+    const url = `https://marketplace.emag.${domain}/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
     window.open(url, '_blank');
   };
 

@@ -142,11 +142,17 @@ class SignupRequest(BaseModel):
 
 # EMAG Client
 class EMAGClient:
-    def __init__(self, client_id, client_secret, vendor_code):
+    def __init__(self, client_id, client_secret, vendor_code, country="ro"):
         self.client_id = client_id
         self.client_secret = client_secret
         self.vendor_code = vendor_code
-        self.api_url = "https://marketplace-api.emag.ro/api-3/order/read"
+        # Determină URL-ul API bazat pe țară
+        if country.lower() in ["hu", "hungary", "ungaria"]:
+            self.api_url = "https://marketplace-api.emag.hu/api-3/order/read"
+        elif country.lower() in ["bg", "bulgaria", "bulgaria"]:
+            self.api_url = "https://marketplace-api.emag.bg/api-3/order/read"
+        else:
+            self.api_url = "https://marketplace-api.emag.ro/api-3/order/read"
         self.status_map = {
             0: "canceled",
             1: "new",
@@ -918,10 +924,20 @@ async def refresh_orders(request: Request):
     try:
         if platform == 1:
             print(f"[REFRESH] Fetching EMAG orders")
+            # Detectăm țara bazat pe account_label
+            account_label = cred_d.get("account_label", "").upper()
+            if any(keyword in account_label for keyword in ["HU", "HUNGARY", "UNGARIA", "EMAG.HU"]):
+                country = "hu"
+            elif any(keyword in account_label for keyword in ["BG", "BULGARIA", "BULGARIA", "EMAG.BG"]):
+                country = "bg"
+            else:
+                country = "ro"
+            print(f"[REFRESH][EMAG] Detected country: {country.upper()} (from account_label: {cred_d.get('account_label', '')})")
             client = EMAGClient(
                 client_id=cred_d["client_id"],
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
+                country=country,
             )
             # Comenzi noi (1), in progress (2) și prepared (3)
             print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders")

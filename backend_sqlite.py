@@ -149,6 +149,8 @@ class EMAGClient:
         # Determină URL-ul API bazat pe țară
         if country.lower() in ["hu", "hungary", "ungaria"]:
             self.api_url = "https://marketplace-api.emag.hu/api-3/order/read"
+        elif country.lower() in ["bg", "bulgaria", "bulgaria"]:
+            self.api_url = "https://marketplace-api.emag.bg/api-3/order/read"
         else:
             self.api_url = "https://marketplace-api.emag.ro/api-3/order/read"
         self.status_map = {
@@ -1043,9 +1045,14 @@ async def refresh_orders(request: Request):
     try:
         if platform == 1:
             print(f"[REFRESH] Fetching EMAG orders")
-            # Detectăm țara bazat pe account_label (dacă conține "HU", "Hungary", "Ungaria" = Ungaria)
+            # Detectăm țara bazat pe account_label
             account_label = cred_d.get("account_label", "").upper()
-            country = "hu" if any(keyword in account_label for keyword in ["HU", "HUNGARY", "UNGARIA", "EMAG.HU"]) else "ro"
+            if any(keyword in account_label for keyword in ["HU", "HUNGARY", "UNGARIA", "EMAG.HU"]):
+                country = "hu"
+            elif any(keyword in account_label for keyword in ["BG", "BULGARIA", "BULGARIA", "EMAG.BG"]):
+                country = "bg"
+            else:
+                country = "ro"
             print(f"[REFRESH][EMAG] Detected country: {country.upper()} (from account_label: {cred_d.get('account_label', '')})")
             client = EMAGClient(
                 client_id=cred_d["client_id"],
