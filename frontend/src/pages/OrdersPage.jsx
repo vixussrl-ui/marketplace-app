@@ -301,17 +301,30 @@ export default function OrdersPage() {
     const vendorCode = record.vendor_code || '';
     const orderType = record.order_type || 3;
     
-    // Determină domeniul bazat pe marketplace
     const marketplace = record.marketplace?.toUpperCase() || '';
-    let domain = 'ro'; // default
-    if (marketplace === 'EMAG HU') {
-      domain = 'hu';
-    } else if (marketplace === 'EMAG BG') {
-      domain = 'bg';
+
+    // Trendyol: open partner page by country
+    if (marketplace.startsWith('TRENDYOL')) {
+      const country = marketplace.includes(' GR') ? 'gr' : 'ro';
+      const url = `https://partner.trendyol.com/${country}/orders/shipment-packages/created`;
+      window.open(url, '_blank');
+      return;
     }
-    
-    const url = `https://marketplace.emag.${domain}/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
-    window.open(url, '_blank');
+
+    // eMAG: open vendor details by country TLD
+    if (marketplace.startsWith('EMAG')) {
+      let domain = 'ro'; // default
+      if (marketplace === 'EMAG HU') {
+        domain = 'hu';
+      } else if (marketplace === 'EMAG BG') {
+        domain = 'bg';
+      }
+      const url = `https://marketplace.emag.${domain}/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
+      window.open(url, '_blank');
+      return;
+    }
+
+    // Other platforms: do nothing (avoid opening wrong marketplace)
   };
 
   const handleRefresh = async (silent = false) => {
