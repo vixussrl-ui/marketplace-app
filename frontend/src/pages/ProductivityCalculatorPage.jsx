@@ -7,6 +7,15 @@ import { credentialsAPI, emagAPI, platformsAPI, calculatorAPI } from '../api';
 
 const { Title, Text } = Typography;
 
+// Helper function to format numbers without unnecessary decimals
+const formatNumber = (value, decimals = 2) => {
+  if (value === null || value === undefined || isNaN(value)) return '0';
+  const num = parseFloat(value);
+  const formatted = num.toFixed(decimals);
+  // Remove trailing zeros and decimal point if not needed
+  return parseFloat(formatted).toString();
+};
+
 export default function ProductivityCalculatorPage() {
   const [products, setProducts] = useState([]);
   const [editingKey, setEditingKey] = useState('');
@@ -190,12 +199,12 @@ export default function ProductivityCalculatorPage() {
 
       if (!hasValidParts) {
         return {
-          electricity: '0.00',
-          printPerHour: '0.00',
-          bestPrice: '0.00',
-          targetPerHour: effectiveTargetPerHour.toFixed(2),
-          profitPerPiece: '0.00',
-          profitPerHour: '0.00',
+          electricity: '0',
+          printPerHour: '0',
+          bestPrice: '0',
+          targetPerHour: formatNumber(effectiveTargetPerHour, 2),
+          profitPerPiece: '0',
+          profitPerHour: '0',
         };
       }
 
@@ -218,12 +227,12 @@ export default function ProductivityCalculatorPage() {
       const profitPerHour = profitPerPiece * printPerHour;
 
       return {
-        electricity: totalElectricityPerPiece.toFixed(2), // Suma costurilor de electricitate per piesă pentru toate părțile
-        printPerHour: printPerHour.toFixed(2),
-        bestPrice: totalBestPrice.toFixed(2), // Suma bestPrice-urilor pentru toate părțile
-        targetPerHour: effectiveTargetPerHour.toFixed(2),
-        profitPerPiece: profitPerPiece.toFixed(2),
-        profitPerHour: profitPerHour.toFixed(2),
+        electricity: formatNumber(totalElectricityPerPiece, 2), // Suma costurilor de electricitate per piesă pentru toate părțile
+        printPerHour: formatNumber(printPerHour, 2),
+        bestPrice: formatNumber(totalBestPrice, 2), // Suma bestPrice-urilor pentru toate părțile
+        targetPerHour: formatNumber(effectiveTargetPerHour, 2),
+        profitPerPiece: formatNumber(profitPerPiece, 2),
+        profitPerHour: formatNumber(profitPerHour, 2),
       };
     }
 
@@ -265,12 +274,12 @@ export default function ProductivityCalculatorPage() {
     const profitPerHour = profitPerPiece * printPerHour;
 
       return {
-        electricity: electricity.toFixed(2),
-        printPerHour: printPerHour.toFixed(2),
-        bestPrice: bestPrice.toFixed(2),
-        targetPerHour: effectiveTargetPerHour.toFixed(2),
-        profitPerPiece: profitPerPiece.toFixed(2),
-        profitPerHour: profitPerHour.toFixed(2),
+        electricity: formatNumber(electricity, 2),
+        printPerHour: formatNumber(printPerHour, 2),
+        bestPrice: formatNumber(bestPrice, 2),
+        targetPerHour: formatNumber(effectiveTargetPerHour, 2),
+        profitPerPiece: formatNumber(profitPerPiece, 2),
+        profitPerHour: formatNumber(profitPerHour, 2),
       };
   }, [electricitySettings]);
 
@@ -627,7 +636,7 @@ export default function ProductivityCalculatorPage() {
             />
           )
         ) : (
-          <span>{partRecord[dataIndex] !== null && partRecord[dataIndex] !== undefined ? (inputType === 'decimal' ? parseFloat(partRecord[dataIndex]).toFixed(2) : partRecord[dataIndex]) : <span style={{ color: '#999' }}>—</span>}</span>
+          <span>{partRecord[dataIndex] !== null && partRecord[dataIndex] !== undefined ? (inputType === 'decimal' ? formatNumber(partRecord[dataIndex], 2) : partRecord[dataIndex]) : <span style={{ color: '#999' }}>—</span>}</span>
         )}
       </td>
     );
@@ -716,7 +725,7 @@ export default function ProductivityCalculatorPage() {
       inputType: 'decimal',
       align: 'center',
       render: (value) => (
-        <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>
+        <span style={{ fontSize: '15px' }}>{formatNumber(value || 0, 2)}</span>
       ),
     },
     {
@@ -812,7 +821,7 @@ export default function ProductivityCalculatorPage() {
           : (electricitySettings.targetPrintRate || 22.00);
         return (
           <span style={{ fontSize: '15px', fontWeight: 600 }}>
-            {parseFloat(displayValue).toFixed(2)}
+            {formatNumber(displayValue, 2)}
             {value === null || value === undefined ? (
               <span style={{ fontSize: '11px', color: '#999', marginLeft: '4px' }}>(global)</span>
             ) : null}
@@ -832,7 +841,7 @@ export default function ProductivityCalculatorPage() {
       editable: true,
       inputType: 'decimal',
       align: 'center',
-      render: (value) => <span style={{ fontSize: '15px' }}>{parseFloat(value || 10).toFixed(1)}</span>,
+      render: (value) => <span style={{ fontSize: '15px' }}>{formatNumber(value || 10, 1)}</span>,
     },
     {
       title: (
@@ -895,11 +904,11 @@ export default function ProductivityCalculatorPage() {
               const partCostMaterialPerPiece = partStackSize > 0 ? partCostMaterial / partStackSize : 0;
               totalCostMaterialPerPiece += partCostMaterialPerPiece;
             });
-            return <span style={{ fontSize: '15px' }}>{parseFloat(totalCostMaterialPerPiece).toFixed(2)}</span>;
+            return <span style={{ fontSize: '15px' }}>{formatNumber(totalCostMaterialPerPiece, 2)}</span>;
           }
           return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
         }
-        return <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>;
+        return <span style={{ fontSize: '15px' }}>{formatNumber(value || 0, 2)}</span>;
       },
     },
     {
@@ -1227,7 +1236,7 @@ export default function ProductivityCalculatorPage() {
                         const partPrintTime = partRecord.printTime !== null && partRecord.printTime !== undefined ? partRecord.printTime : 0;
                         const partStackSize = partRecord.stackSize !== null && partRecord.stackSize !== undefined ? partRecord.stackSize : 1;
                         const printPerHour = partPrintTime > 0 ? (partStackSize * 60) / partPrintTime : 0;
-                        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{printPerHour.toFixed(2)}</span>;
+                        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{formatNumber(printPerHour, 2)}</span>;
                       },
                     },
                     {
@@ -1245,7 +1254,7 @@ export default function ProductivityCalculatorPage() {
                         const partPrintTime = partRecord.printTime !== null && partRecord.printTime !== undefined ? partRecord.printTime : 0;
                         const partStackSize = partRecord.stackSize !== null && partRecord.stackSize !== undefined ? partRecord.stackSize : 1;
                         const partElectricity = partPrintTime > 0 ? (partPrintTime / 60) * printerConsumption * electricityCost : 0;
-                        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{partElectricity.toFixed(2)}</span>;
+                        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{formatNumber(partElectricity, 2)}</span>;
                       },
                     },
                     {
@@ -1261,7 +1270,7 @@ export default function ProductivityCalculatorPage() {
                         const targetPerHour = record.targetPerHour !== null && record.targetPerHour !== undefined 
                           ? record.targetPerHour 
                           : (electricitySettings.targetPrintRate || 22.00);
-                        return <span style={{ fontSize: '15px', fontWeight: 600 }}>{parseFloat(targetPerHour).toFixed(2)}</span>;
+                        return <span style={{ fontSize: '15px', fontWeight: 600 }}>{formatNumber(targetPerHour, 2)}</span>;
                       },
                     },
                     {
@@ -1275,7 +1284,7 @@ export default function ProductivityCalculatorPage() {
                       align: 'center',
                       render: () => {
                         const commissionEmag = record.commissionEmag !== null && record.commissionEmag !== undefined ? record.commissionEmag : 10;
-                        return <span style={{ fontSize: '15px' }}>{parseFloat(commissionEmag).toFixed(1)}</span>;
+                        return <span style={{ fontSize: '15px' }}>{formatNumber(commissionEmag, 1)}</span>;
                       },
                     },
                     {
