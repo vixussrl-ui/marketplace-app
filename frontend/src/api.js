@@ -46,3 +46,8 @@ export const ordersAPI = {
 export const emagAPI = {
   getProductPrice: (sku, credentialId) => api.post('/emag/product/price', { sku, credential_id: credentialId }),
 };
+
+export const calculatorAPI = {
+  getProducts: () => api.get('/calculator/products'),
+  saveProducts: (products, electricitySettings) => api.put('/calculator/products', { products, electricity_settings: electricitySettings }),
+};

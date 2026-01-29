@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message, Modal, Form, Select } from 'antd';
+import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message, Modal, Form, Select, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, SaveOutlined, SettingOutlined, CloudDownloadOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
-import { credentialsAPI, emagAPI, platformsAPI } from '../api';
+import { credentialsAPI, emagAPI, platformsAPI, calculatorAPI } from '../api';
 
 const { Title, Text } = Typography;
-
-const STORAGE_KEY = 'productivity_calculator_products';
-const ELECTRICITY_STORAGE_KEY = 'electricity_calculator_settings';
 
 export default function ProductivityCalculatorPage() {
   const [products, setProducts] = useState([]);
@@ -20,31 +17,32 @@ export default function ProductivityCalculatorPage() {
     electricityCost: 1.11
   });
   const [emagRomaniaCredential, setEmagRomaniaCredential] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Load products from localStorage on mount
+  // Load products and settings from server on mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    const loadCalculatorData = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        setProducts(parsed);
-      } catch (e) {
-        console.error('Failed to load saved products:', e);
+        setLoading(true);
+        const response = await calculatorAPI.getProducts();
+        const data = response.data;
+        
+        if (data.products && data.products.length > 0) {
+          setProducts(data.products);
+        }
+        
+        if (data.electricity_settings) {
+          setElectricitySettings(data.electricity_settings);
+        }
+      } catch (error) {
+        console.error('Failed to load calculator data:', error);
+        // Fallback to empty state if server fails
+      } finally {
+        setLoading(false);
       }
-    }
-  }, []);
-
-  // Load electricity settings from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem(ELECTRICITY_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setElectricitySettings(parsed);
-      } catch (e) {
-        console.error('Failed to load electricity settings:', e);
-      }
-    }
+    };
+    
+    loadCalculatorData();
   }, []);
 
   // Set form initial values when modal opens
@@ -102,12 +100,21 @@ export default function ProductivityCalculatorPage() {
     loadEmagCredentials();
   }, []);
 
-  // Save products to localStorage whenever they change
+  // Save products to server whenever they change (debounced)
   useEffect(() => {
-    if (products.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+    if (!loading && products.length >= 0) {
+      const timeoutId = setTimeout(async () => {
+        try {
+          await calculatorAPI.saveProducts(products, electricitySettings);
+        } catch (error) {
+          console.error('Failed to save products to server:', error);
+          message.error('Failed to save products. Please try again.');
+        }
+      }, 1000); // Debounce: save 1 second after last change
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [products]);
+  }, [products, electricitySettings, loading]);
 
   const calculateRow = useCallback((record) => {
     const {
@@ -167,31 +174,83 @@ export default function ProductivityCalculatorPage() {
     setEditingKey(newProduct.key);
   }, []);
 
-  const fetchEmagPrice = useCallback(async (record) => {
-    if (!record.sku) {
-      message.warning('Please enter SKU first');
-      return;
-    }
+  const handleCellChange = useCallback((recordKey, dataIndex, value) => {
+    setProducts(prev => prev.map(item => {
+      if (item.key === recordKey) {
+        return { ...item, [dataIndex]: value };
+      }
+      return item;
+    }));
+  }, []);
+
+  const fetchAllEmagPrices = useCallback(async () => {
     if (!emagRomaniaCredential) {
       message.warning('eMAG România credential not found. Please add one in Settings.');
       return;
     }
     
+    // Filtrează produsele care au SKU
+    const productsWithSku = products.filter(p => p.sku && p.sku.trim() !== '');
+    
+    if (productsWithSku.length === 0) {
+      message.warning('No products with SKU found. Please add SKU to products first.');
+      return;
+    }
+    
+    const hide = message.loading({ 
+      content: `Fetching prices for ${productsWithSku.length} product(s)...`, 
+      key: 'fetchAllPrices',
+      duration: 0 
+    });
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
     try {
-      message.loading({ content: 'Fetching price from eMAG România...', key: 'fetchPrice' });
-      const response = await emagAPI.getProductPrice(record.sku, emagRomaniaCredential);
-      const price = response.data.price;
+      // Fetch prices pentru toate produsele în paralel
+      const promises = productsWithSku.map(async (product) => {
+        try {
+          const response = await emagAPI.getProductPrice(product.sku, emagRomaniaCredential);
+          const price = response.data.price;
+          if (price !== null && price !== undefined) {
+            handleCellChange(product.key, 'pretEmag', price);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          console.error(`Failed to fetch price for SKU ${product.sku}:`, error);
+          errorCount++;
+        }
+      });
       
-      handleCellChange(record.key, 'pretEmag', price);
-      message.success({ content: `Price fetched: ${price} RON`, key: 'fetchPrice' });
+      await Promise.all(promises);
+      
+      hide();
+      
+      if (successCount > 0) {
+        message.success({ 
+          content: `Successfully fetched ${successCount} price(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`, 
+          key: 'fetchAllPrices',
+          duration: 3
+        });
+      } else {
+        message.error({ 
+          content: 'Failed to fetch any prices. Please check SKUs and credentials.', 
+          key: 'fetchAllPrices',
+          duration: 5
+        });
+      }
     } catch (error) {
-      console.error('Failed to fetch eMAG price:', error);
+      hide();
+      console.error('Failed to fetch eMAG prices:', error);
       message.error({ 
-        content: error.response?.data?.detail || 'Failed to fetch price from eMAG România', 
-        key: 'fetchPrice' 
+        content: 'Failed to fetch prices from eMAG România', 
+        key: 'fetchAllPrices',
+        duration: 5
       });
     }
-  }, [emagRomaniaCredential]);
+  }, [emagRomaniaCredential, products, handleCellChange]);
 
   const deleteRow = useCallback((key) => {
     setProducts(prev => prev.filter(item => item.key !== key));
@@ -211,15 +270,6 @@ export default function ProductivityCalculatorPage() {
   const save = useCallback((key) => {
     setEditingKey('');
     message.success('Product saved');
-  }, []);
-
-  const handleCellChange = useCallback((recordKey, dataIndex, value) => {
-    setProducts(prev => prev.map(item => {
-      if (item.key === recordKey) {
-        return { ...item, [dataIndex]: value };
-      }
-      return item;
-    }));
   }, []);
 
   const EditableCell = React.memo(({ editing, dataIndex, title, record, children, inputType = 'text', ...restProps }) => {
@@ -330,18 +380,8 @@ export default function ProductivityCalculatorPage() {
       editable: true,
       inputType: 'decimal',
       align: 'right',
-      render: (value, record) => (
-        <Space>
-          <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>
-          <Button
-            type="link"
-            size="small"
-            icon={<CloudDownloadOutlined />}
-            onClick={() => fetchEmagPrice(record)}
-            title="Fetch price from eMAG România"
-            style={{ padding: 0, height: 'auto' }}
-          />
-        </Space>
+      render: (value) => (
+        <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>
       ),
     },
     {
@@ -475,7 +515,7 @@ export default function ProductivityCalculatorPage() {
         );
       },
     },
-  ], [calculateRow, isEditing, edit, save, cancel, deleteRow, fetchEmagPrice, handleCellChange]);
+  ], [calculateRow, isEditing, edit, save, cancel, deleteRow, handleCellChange]);
   
   const mergedColumns = useMemo(() => {
     return columns.map((col) => {
@@ -558,6 +598,17 @@ export default function ProductivityCalculatorPage() {
           extra={
             <Space>
               <Button
+                icon={<CloudDownloadOutlined />}
+                onClick={fetchAllEmagPrices}
+                style={{
+                  fontSize: '15px',
+                  padding: '6px 16px',
+                  height: 'auto'
+                }}
+              >
+                Fetch Prices
+              </Button>
+              <Button
                 icon={<SettingOutlined />}
                 onClick={() => setElectricityModalVisible(true)}
                 style={{
@@ -584,8 +635,9 @@ export default function ProductivityCalculatorPage() {
             </Space>
           }
         >
-          <Table
-            className="productivity-table"
+          <Spin spinning={loading}>
+            <Table
+              className="productivity-table"
             components={{
               body: {
                 cell: EditableCell,
@@ -600,7 +652,8 @@ export default function ProductivityCalculatorPage() {
             rowClassName={() => theme.TABLE_CONFIG.rowClassName}
             size="small"
           />
-          {products.length === 0 && (
+          </Spin>
+          {products.length === 0 && !loading && (
             <div style={{ 
               textAlign: 'center', 
               padding: '60px 0',
@@ -619,7 +672,7 @@ export default function ProductivityCalculatorPage() {
           onOk={async () => {
             try {
               const values = await electricityForm.validateFields();
-              localStorage.setItem(ELECTRICITY_STORAGE_KEY, JSON.stringify(values));
+              // Settings will be saved automatically via the useEffect that watches electricitySettings
               setElectricitySettings(values);
               setElectricityModalVisible(false);
               message.success('Electricity settings saved!');

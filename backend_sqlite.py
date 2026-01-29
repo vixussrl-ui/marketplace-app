@@ -73,6 +73,18 @@ def init_db():
         );
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calculator_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            products_data TEXT NOT NULL,
+            electricity_settings TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        """
+    )
     conn.commit()
 
 
@@ -1140,6 +1152,77 @@ async def get_emag_product_price(request: Request):
         raise HTTPException(status_code=404, detail="Product price not found")
     
     return {"sku": sku, "price": price}
+
+
+@app.get("/calculator/products")
+async def get_calculator_products(request: Request):
+    """Get calculator products and settings for the current user"""
+    user = get_current_user(request)
+    
+    cur = conn.execute(
+        "SELECT products_data, electricity_settings FROM calculator_products WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
+        (user["id"],)
+    )
+    row = cur.fetchone()
+    
+    if not row:
+        return {
+            "products": [],
+            "electricity_settings": {
+                "printerConsumption": 0.12,
+                "electricityCost": 1.11
+            }
+        }
+    
+    products_data = json.loads(row["products_data"]) if row["products_data"] else []
+    electricity_settings = json.loads(row["electricity_settings"]) if row["electricity_settings"] else {
+        "printerConsumption": 0.12,
+        "electricityCost": 1.11
+    }
+    
+    return {
+        "products": products_data,
+        "electricity_settings": electricity_settings
+    }
+
+
+@app.put("/calculator/products")
+async def save_calculator_products(request: Request):
+    """Save calculator products for the current user"""
+    user = get_current_user(request)
+    data = await request.json()
+    
+    products = data.get("products", [])
+    electricity_settings = data.get("electricity_settings", {})
+    
+    products_json = json.dumps(products)
+    electricity_json = json.dumps(electricity_settings)
+    updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Check if user already has saved products
+    cur = conn.execute(
+        "SELECT id FROM calculator_products WHERE user_id = ?",
+        (user["id"],)
+    )
+    existing = cur.fetchone()
+    
+    if existing:
+        # Update existing record
+        conn.execute(
+            "UPDATE calculator_products SET products_data = ?, electricity_settings = ?, updated_at = ? WHERE user_id = ?",
+            (products_json, electricity_json, updated_at, user["id"])
+        )
+    else:
+        # Insert new record
+        conn.execute(
+            "INSERT INTO calculator_products (user_id, products_data, electricity_settings, updated_at) VALUES (?, ?, ?, ?)",
+            (user["id"], products_json, electricity_json, updated_at)
+        )
+    
+    conn.commit()
+    
+    return {"message": "Products saved successfully"}
+
 
 @app.post("/orders/refresh")
 async def refresh_orders(request: Request):
