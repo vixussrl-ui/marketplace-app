@@ -972,6 +972,60 @@ async def test_trendyol(credential_id: int, request: Request):
     
     return {"test_results": test_results}
 
+@app.post("/emag/product/price")
+async def get_emag_product_price(request: Request):
+    """Preluează prețul unui produs de pe eMAG folosind SKU"""
+    user = get_current_user(request)
+    data = await request.json()
+    sku = data.get("sku")
+    credential_id = data.get("credential_id")
+    
+    if not sku:
+        raise HTTPException(status_code=400, detail="SKU is required")
+    if not credential_id:
+        raise HTTPException(status_code=400, detail="credential_id is required")
+    
+    # Preluăm credentialele din baza de date
+    conn = get_db_connection()
+    cred = conn.execute(
+        "SELECT * FROM credentials WHERE id = ? AND user_id = ?",
+        (credential_id, user["id"])
+    ).fetchone()
+    
+    if not cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    
+    cred_d = row_to_dict(cred)
+    platform = cred_d.get("platform")
+    
+    # Verificăm dacă platforma este eMAG (poate fi ID numeric sau string)
+    if platform != "emag" and platform != 1 and platform != "1":
+        raise HTTPException(status_code=400, detail="This endpoint is only for eMAG credentials")
+    
+    # Detectăm țara
+    account_label = cred_d.get("account_label", "").upper()
+    country = "ro"
+    if any(keyword in account_label for keyword in ["HU", "HUNGARY", "UNGARIA", "EMAG.HU"]):
+        country = "hu"
+    elif any(keyword in account_label for keyword in ["BG", "BULGARIA", "EMAG.BG"]):
+        country = "bg"
+    
+    # Creăm clientul eMAG
+    client = EMAGClient(
+        client_id=cred_d.get("client_id"),
+        client_secret=cred_d.get("client_secret", ""),
+        vendor_code=cred_d.get("vendor_code", ""),
+        country=country
+    )
+    
+    # Preluăm prețul
+    price = await client.fetch_product_price(sku)
+    
+    if price is None:
+        raise HTTPException(status_code=404, detail="Product price not found")
+    
+    return {"sku": sku, "price": price}
+
 @app.post("/orders/refresh")
 async def refresh_orders(request: Request):
     print(f"[REFRESH] Refresh request started")
