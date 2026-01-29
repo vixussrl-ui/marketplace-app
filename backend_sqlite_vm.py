@@ -148,11 +148,14 @@ class EMAGClient:
         self.vendor_code = vendor_code
         # Determină URL-ul API bazat pe țară
         if country.lower() in ["hu", "hungary", "ungaria"]:
-            self.api_url = "https://marketplace-api.emag.hu/api-3/order/read"
+            self.base_url = "https://marketplace-api.emag.hu/api-3"
+            self.api_url = f"{self.base_url}/order/read"
         elif country.lower() in ["bg", "bulgaria", "bulgaria"]:
-            self.api_url = "https://marketplace-api.emag.bg/api-3/order/read"
+            self.base_url = "https://marketplace-api.emag.bg/api-3"
+            self.api_url = f"{self.base_url}/order/read"
         else:
-            self.api_url = "https://marketplace-api.emag.ro/api-3/order/read"
+            self.base_url = "https://marketplace-api.emag.ro/api-3"
+            self.api_url = f"{self.base_url}/order/read"
         self.status_map = {
             0: "canceled",
             1: "new",
@@ -241,6 +244,82 @@ class EMAGClient:
             import traceback
             traceback.print_exc()
             return [], 1, 0
+
+    async def fetch_product_price(self, sku):
+        """Preluează prețul unui produs de pe eMAG folosind SKU"""
+        try:
+            headers = {
+                "Authorization": self._get_auth_header(),
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "data": {
+                    "sku": sku
+                }
+            }
+            
+            # Încercăm mai multe endpoint-uri posibile pentru a prelua prețul
+            # eMAG API poate folosi: /offer/read, /product/read, sau /offer/listing
+            endpoints_to_try = [
+                f"{self.base_url}/offer/read",
+                f"{self.base_url}/product/read",
+                f"{self.base_url}/offer/listing"
+            ]
+            
+            print(f"[EMAG] Fetching price for SKU: {sku}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                for offer_url in endpoints_to_try:
+                    try:
+                        print(f"[EMAG] Trying endpoint: {offer_url}")
+                        response = await client.post(offer_url, json=payload, headers=headers)
+                        print(f"[EMAG] Response status: {response.status_code}")
+                        
+                        if response.status_code == 404:
+                            continue  # Încercăm următorul endpoint
+                        
+                        response.raise_for_status()
+                        data = response.json()
+                        
+                        if data.get("isError"):
+                            error_msg = data.get("messages", ["Unknown error"])
+                            print(f"[ERROR] EMAG API error: {error_msg}")
+                            continue  # Încercăm următorul endpoint
+                        
+                        # Extragem prețul din răspuns
+                        results = data.get("results", [])
+                        if results and len(results) > 0:
+                            offer = results[0]
+                            # Încercăm mai multe câmpuri posibile pentru preț
+                            price = (offer.get("sale_price") or 
+                                    offer.get("price") or 
+                                    offer.get("current_price") or
+                                    offer.get("selling_price") or
+                                    offer.get("final_price"))
+                            if price:
+                                print(f"[EMAG] Found price: {price} from endpoint: {offer_url}")
+                                return float(price)
+                        
+                        # Dacă nu găsim preț în results, verificăm direct în data
+                        if "sale_price" in data:
+                            price = data.get("sale_price") or data.get("price")
+                            if price:
+                                print(f"[EMAG] Found price: {price} from endpoint: {offer_url}")
+                                return float(price)
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 404:
+                            continue  # Încercăm următorul endpoint
+                        raise
+                    except Exception as e:
+                        print(f"[EMAG] Error with endpoint {offer_url}: {e}")
+                        continue  # Încercăm următorul endpoint
+                
+                return None
+        except Exception as e:
+            print(f"[ERROR] Error fetching EMAG product price: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
 
 # Trendyol Client
