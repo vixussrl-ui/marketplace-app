@@ -705,7 +705,7 @@ export default function ProductivityCalculatorPage() {
         </Tooltip>
       ),
       key: 'bestPrice',
-      width: 180,
+      width: 190,
       align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
@@ -720,7 +720,7 @@ export default function ProductivityCalculatorPage() {
       ),
       dataIndex: 'pretEmag',
       key: 'pretEmag',
-      width: 200,
+      width: 210,
       editable: false, // Nu este editabil - se preia doar de pe eMAG
       inputType: 'decimal',
       align: 'center',
@@ -735,7 +735,7 @@ export default function ProductivityCalculatorPage() {
         </Tooltip>
       ),
       key: 'profitPerPiece',
-      width: 180,
+      width: 190,
       align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
@@ -758,7 +758,7 @@ export default function ProductivityCalculatorPage() {
         </Tooltip>
       ),
       key: 'profitPerHour',
-      width: 180,
+      width: 190,
       align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
@@ -781,7 +781,7 @@ export default function ProductivityCalculatorPage() {
         </Tooltip>
       ),
       key: 'printPerHour',
-      width: 180,
+      width: 190,
       align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
@@ -795,7 +795,7 @@ export default function ProductivityCalculatorPage() {
         </Tooltip>
       ),
       key: 'electricity',
-      width: 150,
+      width: 160,
       align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
@@ -810,7 +810,7 @@ export default function ProductivityCalculatorPage() {
       ),
       dataIndex: 'targetPerHour',
       key: 'targetPerHour',
-      width: 180,
+      width: 190,
       editable: true,
       inputType: 'decimal',
       align: 'center',
@@ -837,7 +837,7 @@ export default function ProductivityCalculatorPage() {
       ),
       dataIndex: 'commissionEmag',
       key: 'commissionEmag',
-      width: 180,
+      width: 190,
       editable: true,
       inputType: 'decimal',
       align: 'center',
@@ -889,7 +889,7 @@ export default function ProductivityCalculatorPage() {
       ),
       dataIndex: 'costMaterial',
       key: 'costMaterial',
-      width: 180,
+      width: 190,
       editable: (record) => !record.isMultipleParts,
       inputType: 'decimal',
       align: 'center',
@@ -1010,11 +1010,11 @@ export default function ProductivityCalculatorPage() {
             max-width: 2800px !important;
           }
           .productivity-table .ant-table-tbody > tr > td {
-            padding: 12px 18px !important;
+            padding: 8px 12px !important;
             font-size: 15px !important;
           }
           .productivity-table .ant-table-thead > tr > th {
-            padding: 15px 18px !important;
+            padding: 10px 12px !important;
             background: ${theme.COLORS.primaryLight} !important;
             font-weight: 600 !important;
             font-size: 16px !important;
@@ -1029,7 +1029,7 @@ export default function ProductivityCalculatorPage() {
           .productivity-table .ant-input-number {
             border: 1px solid ${theme.COLORS.border} !important;
             font-size: 15px !important;
-            padding: 6px 11px !important;
+            padding: 4px 8px !important;
           }
           .productivity-table input:focus,
           .productivity-table .ant-input-number:focus {
@@ -1186,7 +1186,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'dummy-best-price',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: () => <span style={{ color: '#999' }}>—</span>,
                     },
@@ -1197,7 +1197,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'dummy-emag-price',
-                      width: 200,
+                      width: 210,
                       align: 'center',
                       render: () => <span style={{ color: '#999' }}>—</span>,
                     },
@@ -1208,7 +1208,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'dummy-profit-item',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: () => <span style={{ color: '#999' }}>—</span>,
                     },
@@ -1219,7 +1219,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'dummy-profit-hour',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: () => <span style={{ color: '#999' }}>—</span>,
                     },
@@ -1230,7 +1230,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'printed-items-per-hour',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: (_, partRecord) => {
                         const partPrintTime = partRecord.printTime !== null && partRecord.printTime !== undefined ? partRecord.printTime : 0;
@@ -1246,7 +1246,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'electricity-cost',
-                      width: 150,
+                      width: 160,
                       align: 'center',
                       render: (_, partRecord) => {
                         const printerConsumption = electricitySettings.printerConsumption || 0.12; // kW
@@ -1264,7 +1264,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'target-print-rate',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: () => {
                         const targetPerHour = record.targetPerHour !== null && record.targetPerHour !== undefined 
@@ -1280,7 +1280,7 @@ export default function ProductivityCalculatorPage() {
                         </Tooltip>
                       ),
                       key: 'emag-commission',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: () => {
                         const commissionEmag = record.commissionEmag !== null && record.commissionEmag !== undefined ? record.commissionEmag : 10;
@@ -1337,7 +1337,7 @@ export default function ProductivityCalculatorPage() {
                       ),
                       dataIndex: 'costMaterial',
                       key: 'costMaterial',
-                      width: 180,
+                      width: 190,
                       align: 'center',
                       render: (value, partRecord) => (
                         <EditablePartCell
