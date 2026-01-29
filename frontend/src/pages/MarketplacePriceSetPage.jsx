@@ -434,7 +434,7 @@ export default function MarketplacePriceSetPage() {
     };
 
     return [...baseColumns, ...marketplaceColumns, actionsColumn];
-  }, [marketplaces, electricitySettings, calculateMarketplacePrice, handleRemoveMarketplace, handleRemoveProduct]);
+  }, [marketplaces, electricitySettings, calculateMarketplacePrice, handleRemoveMarketplace, handleRemoveProduct, isEditingMarketplaces, handleEditMarketplace]);
 
   return (
     <MainLayout currentKey="marketplace-price-set">
