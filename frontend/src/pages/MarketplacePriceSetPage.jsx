@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Table, InputNumber, Typography, Space, message, Spin, Button, Modal, Form, Input, Popconfirm, Select } from 'antd';
+import { Card, Table, InputNumber, Typography, Space, message, Spin, Button, Modal, Form, Input, Popconfirm, Select, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
@@ -15,7 +15,7 @@ const formatNumber = (value, decimals = 2) => {
   return parseFloat(formatted).toString();
 };
 
-// Helper function to calculate Best Price (same logic as Print costs page)
+// Helper function to calculate Recommended Price (same logic as Print costs page)
 const calculateBestPrice = (record, electricitySettings) => {
   const {
     isMultipleParts = false,
@@ -202,8 +202,8 @@ export default function MarketplacePriceSetPage() {
     const commission = marketplace.commission || 0;
     const transportCost = marketplace.transportCost || 0;
 
-    // Formula: preț_final = Best Price + (Best Price * commission / 100) + transportCost
-    // Sau: preț_final = Best Price + comision + transport
+    // Formula: preț_final = Recommended Price + (Recommended Price * commission / 100) + transportCost
+    // Sau: preț_final = Recommended Price + comision + transport
     const commissionAmount = bestPrice * (commission / 100);
     const finalPriceInRON = bestPrice + commissionAmount + transportCost;
     
@@ -336,7 +336,11 @@ export default function MarketplacePriceSetPage() {
         },
       },
       {
-        title: 'Best Price (RON)',
+        title: (
+          <Tooltip title="The recommended selling price to achieve the target print rate. Calculated as: (Target Print Rate (RON/H) / Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
+            <span>Recommended Price (RON)</span>
+          </Tooltip>
+        ),
         key: 'bestPrice',
         width: 180,
         align: 'center',
@@ -587,7 +591,7 @@ export default function MarketplacePriceSetPage() {
         >
           <div style={{ marginBottom: '16px', padding: '12px', background: theme.COLORS.primaryLight, borderRadius: theme.RADIUS.md }}>
             <Text type="secondary" style={{ fontSize: '14px' }}>
-              <strong>Formula:</strong> Marketplace Price = Best Price + (Best Price × Commission %) + Transport Cost
+              <strong>Formula:</strong> Marketplace Price = Recommended Price + (Recommended Price × Commission %) + Transport Cost
             </Text>
           </div>
 
@@ -724,10 +728,10 @@ export default function MarketplacePriceSetPage() {
             </Form.Item>
             <Form.Item
               name="manualBestPrice"
-              label="Best Price (RON)"
+              label="Recommended Price (RON)"
               rules={[
-                { required: true, message: 'Please enter best price' },
-                { type: 'number', min: 0, message: 'Best price must be positive' }
+                { required: true, message: 'Please enter recommended price' },
+                { type: 'number', min: 0, message: 'Recommended price must be positive' }
               ]}
             >
               <InputNumber

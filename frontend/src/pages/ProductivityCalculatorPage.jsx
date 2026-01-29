@@ -202,7 +202,7 @@ export default function ProductivityCalculatorPage() {
         const partElectricityPerPiece = partStackSize > 0 ? partElectricity / partStackSize : 0;
         totalElectricityPerPiece += partElectricityPerPiece;
         
-        // Best price pentru această parte (calculat independent) - FĂRĂ comision
+        // Recommended price pentru această parte (calculat independent) - FĂRĂ comision
         const partTargetPerPiece = partPrintPerHour > 0 ? effectiveTargetPerHour / partPrintPerHour : 0;
         const partBestPrice = partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece;
         
@@ -231,7 +231,7 @@ export default function ProductivityCalculatorPage() {
       // Packaging cost per piesă (cost fix per produs final, nu per print)
       const effectivePackagingCost = packagingCost !== null && packagingCost !== undefined ? packagingCost : 0;
       
-      // Best price trebuie să includă și packaging cost
+      // Recommended price trebuie să includă și packaging cost
       totalBestPrice += effectivePackagingCost;
 
       // Profit REAL per piesă = pretEmag - totalCostMaterialPerPiece - totalElectricityPerPiece - packagingCost
@@ -273,8 +273,8 @@ export default function ProductivityCalculatorPage() {
     // Packaging cost per piesă (cost fix per produs final, nu per print)
     const effectivePackagingCost = packagingCost !== null && packagingCost !== undefined ? packagingCost : 0;
     
-    // 4. Best price = targetRONperHour / printPerHour + costMaterialPerPiece + electricityPerPiece + packagingCost
-    // Cel mai bun preț de vânzare pentru a atinge target-ul de profit pe oră (FĂRĂ comision)
+    // 4. Recommended price = targetRONperHour / printPerHour + costMaterialPerPiece + electricityPerPiece + packagingCost
+    // Prețul recomandat de vânzare pentru a atinge target-ul de profit pe oră (FĂRĂ comision)
     // effectiveTargetPerHour este deja declarat la începutul funcției
     const targetPerPieceForPricing = printPerHour > 0 ? effectiveTargetPerHour / printPerHour : 0;
     const bestPrice = targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece + effectivePackagingCost;
@@ -767,8 +767,8 @@ export default function ProductivityCalculatorPage() {
     },
     {
       title: (
-        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: Target per piece + Material Cost per piece + Electricity Cost per piece + Packaging Cost per piece. For multiple parts products, this is the sum of best prices for all parts plus packaging cost.">
-          <span>Best Price (RON)</span>
+        <Tooltip title="The recommended selling price to achieve the target print rate. Calculated as: (Target Print Rate (RON/H) / Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
+          <span>Recommended Price (RON)</span>
         </Tooltip>
       ),
       key: 'bestPrice',
@@ -871,7 +871,7 @@ export default function ProductivityCalculatorPage() {
     },
     {
       title: (
-        <Tooltip title="Target profit rate in RON per hour. This is a global setting that can be overridden per product. Used to calculate the 'Best Price'. If not set for a product, the global setting from Settings is used.">
+        <Tooltip title="Target profit rate in RON per hour. This is a global setting that can be overridden per product. Used to calculate the 'Recommended Price'. If not set for a product, the global setting from Settings is used.">
           <span>Target Print Rate (RON/H)</span>
         </Tooltip>
       ),
@@ -1254,8 +1254,8 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: Target per piece + Material Cost per piece + Electricity Cost per piece + Packaging Cost per piece. For multiple parts products, this is the sum of best prices for all parts plus packaging cost.">
-                          <span>Best Price (RON)</span>
+                        <Tooltip title="The recommended selling price to achieve the target print rate. Calculated as: (Target Print Rate (RON/H) / Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
+                          <span>Recommended Price (RON)</span>
                         </Tooltip>
                       ),
                       key: 'dummy-best-price',
@@ -1332,7 +1332,7 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="Target profit rate in RON per hour. This is a global setting that can be overridden per product. Used to calculate the 'Best Price'. If not set for a product, the global setting from Settings is used.">
+                        <Tooltip title="Target profit rate in RON per hour. This is a global setting that can be overridden per product. Used to calculate the 'Recommended Price'. If not set for a product, the global setting from Settings is used.">
                           <span>Target Print Rate (RON/H)</span>
                         </Tooltip>
                       ),
