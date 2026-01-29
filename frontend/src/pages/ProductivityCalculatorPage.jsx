@@ -47,12 +47,12 @@ export default function ProductivityCalculatorPage() {
     }
   }, []);
 
-  // Set form values after form is mounted and settings are loaded
+  // Set form initial values when modal opens
   useEffect(() => {
-    if (electricitySettings && electricityForm) {
+    if (electricityModalVisible && electricityForm) {
       electricityForm.setFieldsValue(electricitySettings);
     }
-  }, [electricitySettings, electricityForm]);
+  }, [electricityModalVisible, electricitySettings, electricityForm]);
 
   // Load eMAG credentials automatically on mount (România, Bulgaria, Ungaria)
   useEffect(() => {
@@ -634,6 +634,7 @@ export default function ProductivityCalculatorPage() {
           <Form
             form={electricityForm}
             layout="vertical"
+            initialValues={electricitySettings}
           >
             <Form.Item
               name="printerConsumption"
