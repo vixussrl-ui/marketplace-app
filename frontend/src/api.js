@@ -42,3 +42,7 @@ export const ordersAPI = {
   get: (id, userId) => api.get(`/orders/${id}`, { params: { user_id: userId } }),
   refresh: (userId, credentialId) => api.post('/orders/refresh', { user_id: userId, credential_id: credentialId }),
 };
+
+export const emagAPI = {
+  getProductPrice: (sku, credentialId) => api.post('/emag/product/price', { sku, credential_id: credentialId }),
+};
