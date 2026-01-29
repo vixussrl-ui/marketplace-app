@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message, Modal, Form, Select, Spin } from 'antd';
-import { PlusOutlined, DeleteOutlined, SaveOutlined, SettingOutlined, CloudDownloadOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message, Modal, Form, Select, Spin, Switch, Collapse } from 'antd';
+import { PlusOutlined, DeleteOutlined, SaveOutlined, SettingOutlined, CloudDownloadOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
 import { credentialsAPI, emagAPI, platformsAPI, calculatorAPI } from '../api';
@@ -18,6 +18,10 @@ export default function ProductivityCalculatorPage() {
   });
   const [emagRomaniaCredential, setEmagRomaniaCredential] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [addProductModalVisible, setAddProductModalVisible] = useState(false);
+  const [addProductForm] = Form.useForm();
+  const [expandedRows, setExpandedRows] = useState([]);
+  const [editingParts, setEditingParts] = useState({}); // { productKey: true/false }
 
   // Load products and settings from server on mount
   useEffect(() => {
@@ -118,6 +122,8 @@ export default function ProductivityCalculatorPage() {
 
   const calculateRow = useCallback((record) => {
     const {
+      isMultipleParts = false,
+      parts = [],
       printTime = 0,        // H - print time în minute
       stackSize = 1,         // I - stack size
       costMaterial = 0,      // J - cost material (TOTAL per print)
@@ -126,52 +132,183 @@ export default function ProductivityCalculatorPage() {
       pretEmag = 0,          // Prețul real din eMAG (hardcoded, editabil)
     } = record;
 
-    // 1. Electricity cost (per print) = (print time / 60) * printerConsumption * electricityCost
     const printerConsumption = electricitySettings.printerConsumption || 0.12; // kW
     const electricityCost = electricitySettings.electricityCost || 1.11; // lei/kWh
-    const electricity = (printTime / 60) * printerConsumption * electricityCost;
+
+    // Dacă este produs cu multiple părți, fiecare parte este calculată independent
+    if (isMultipleParts && parts && parts.length > 0) {
+      let totalBestPrice = 0;
+      let totalCostMaterial = 0;
+      let totalElectricity = 0;
+      let totalPrintTime = 0;
+      let minPrintPerHour = Infinity;
+      let hasValidParts = false;
+      
+      const commissionDecimal = commissionEmag / 100;
+      
+      // Pentru fiecare parte, calculăm independent: printPerHour, bestPrice, costuri
+      parts.forEach(part => {
+        const partPrintTime = part.printTime !== null && part.printTime !== undefined ? part.printTime : 0;
+        const partStackSize = part.stackSize !== null && part.stackSize !== undefined ? part.stackSize : 1;
+        const partCostMaterial = part.costMaterial !== null && part.costMaterial !== undefined ? part.costMaterial : 0;
+        
+        // Verificăm dacă partea are date valide
+        if (partPrintTime > 0 || partCostMaterial > 0) {
+          hasValidParts = true;
+        }
+        
+        // Print per hour pentru această parte (job independent)
+        const partPrintPerHour = partPrintTime > 0 ? (partStackSize * 60) / partPrintTime : 0;
+        
+        // Costuri per piesă pentru această parte
+        const partCostMaterialPerPiece = partStackSize > 0 ? partCostMaterial / partStackSize : 0;
+        
+        // Electricity pentru această parte
+        const partElectricity = partPrintTime > 0 ? (partPrintTime / 60) * printerConsumption * electricityCost : 0;
+        const partElectricityPerPiece = partStackSize > 0 ? partElectricity / partStackSize : 0;
+        
+        // Best price pentru această parte (calculat independent)
+        const partTargetPerPiece = partPrintPerHour > 0 ? targetPerHour / partPrintPerHour : 0;
+        const partBestPrice = (partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece) > 0
+          ? (partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece) / (1 - commissionDecimal)
+          : 0;
+        
+        // Adunăm bestPrice-urile pentru a obține prețul total
+        totalBestPrice += partBestPrice;
+        totalCostMaterial += partCostMaterial;
+        totalElectricity += partElectricity;
+        totalPrintTime = Math.max(totalPrintTime, partPrintTime);
+        
+        // Print per hour global = cel mai mic (cel mai lent job determină viteza)
+        if (partPrintPerHour > 0) {
+          minPrintPerHour = Math.min(minPrintPerHour, partPrintPerHour);
+        }
+      });
+
+      if (!hasValidParts) {
+        return {
+          electricity: '0.00',
+          printPerHour: '0.00',
+          bestPrice: '0.00',
+          targetPerHour: targetPerHour.toFixed(2),
+          profitPerPiece: '0.00',
+          profitPerHour: '0.00',
+        };
+      }
+
+      // Print per hour global = cel mai mic printPerHour (cel mai lent job)
+      const printPerHour = minPrintPerHour === Infinity ? 0 : minPrintPerHour;
+      
+      // Costuri totale per piesă (suma tuturor părților)
+      // Pentru profit, folosim costurile totale
+      const totalCostMaterialPerPiece = totalCostMaterial; // Cost total material pentru toate părțile
+      const totalElectricityPerPiece = totalElectricity; // Cost total electricitate pentru toate părțile
+
+      // Profit REAL per piesă = pretEmag - (pretEmag * commissionEmag) - totalCostMaterialPerPiece - totalElectricityPerPiece
+      // Profit contabil real: cât îți rămâne în mână după comision + costuri (FĂRĂ target)
+      const effectivePretEmag = pretEmag !== null && pretEmag !== undefined ? pretEmag : 0;
+      const commissionDecimalValue = commissionEmag / 100;
+      const profitPerPiece = effectivePretEmag > 0
+        ? effectivePretEmag - (effectivePretEmag * commissionDecimalValue) - totalCostMaterialPerPiece - totalElectricityPerPiece
+        : 0;
+
+      // Profit per hour = profitPerPiece * printPerHour (cel mai lent job)
+      const profitPerHour = profitPerPiece * printPerHour;
+
+      return {
+        electricity: totalElectricity.toFixed(2),
+        printPerHour: printPerHour.toFixed(2),
+        bestPrice: totalBestPrice.toFixed(2), // Suma bestPrice-urilor pentru toate părțile
+        targetPerHour: targetPerHour.toFixed(2),
+        profitPerPiece: profitPerPiece.toFixed(2),
+        profitPerHour: profitPerHour.toFixed(2),
+      };
+    }
+
+    // Produs simplu (logica existentă)
+    // Tratăm valorile null
+    const effectivePrintTime = printTime !== null && printTime !== undefined ? printTime : 0;
+    const effectiveStackSize = stackSize !== null && stackSize !== undefined ? stackSize : 1;
+    const effectiveCostMaterial = costMaterial !== null && costMaterial !== undefined ? costMaterial : 0;
+    
+    // 1. Electricity cost (per print) = (print time / 60) * printerConsumption * electricityCost
+    const electricity = effectivePrintTime > 0 ? (effectivePrintTime / 60) * printerConsumption * electricityCost : 0;
     
     // 2. Print per hour = stack size * 60 / print time
-    const printPerHour = printTime > 0 ? (stackSize * 60) / printTime : 0;
+    const printPerHour = effectivePrintTime > 0 ? (effectiveStackSize * 60) / effectivePrintTime : 0;
     
-    // 3. Target per piesă = target / oră / print per hour
-    const targetPerPiece = printPerHour > 0 ? targetPerHour / printPerHour : 0;
+    // 3. Cost per piesă (doar costuri reale, FĂRĂ target)
+    const costMaterialPerPiece = effectiveStackSize > 0 ? effectiveCostMaterial / effectiveStackSize : 0;
+    const electricityPerPiece = effectiveStackSize > 0 ? electricity / effectiveStackSize : 0;
     
-    // 4. Cost per piesă = (cost material / stackSize) + (electricity / stackSize) + target per piesă
-    // Calculatorul determină prețul minim necesar pentru a atinge target-ul după comisioane și costuri
-    const costMaterialPerPiece = stackSize > 0 ? costMaterial / stackSize : 0;
-    const electricityPerPiece = stackSize > 0 ? electricity / stackSize : 0;
-    
-    const costPerPiece = costMaterialPerPiece + electricityPerPiece + targetPerPiece;
     const commissionDecimal = commissionEmag / 100;
     
-    // 5. Preț minim viabil (per piesă) = cost per piesă / (1 - commission/100)
-    // Acesta este prețul minim necesar pentru a atinge target-ul după comisioane și costuri
-    const breakEvenPrice = costPerPiece > 0 ? costPerPiece / (1 - commissionDecimal) : 0;
+    // 4. Best price = (targetRONperHour / printPerHour + costMaterialPerPiece + electricityPerPiece) / (1 - commissionEmag)
+    // Cel mai bun preț de vânzare pentru a atinge target-ul de profit pe oră
+    const targetPerPieceForPricing = printPerHour > 0 ? targetPerHour / printPerHour : 0;
+    const bestPrice = (targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece) > 0
+      ? (targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece) / (1 - commissionDecimal)
+      : 0;
 
-    return {
-      electricity: electricity.toFixed(2),
-      printPerHour: printPerHour.toFixed(2),
-      breakEvenPrice: breakEvenPrice.toFixed(2),
-      targetPerPiece: targetPerPiece.toFixed(2),
-      targetPerHour: targetPerHour.toFixed(2),
-    };
+    // 5. Profit REAL per piesă = pretEmag - (pretEmag * commissionEmag) - costMaterialPerPiece - electricityPerPiece
+    // Profit contabil real: cât îți rămâne în mână după comision + costuri (FĂRĂ target)
+    const effectivePretEmag = pretEmag !== null && pretEmag !== undefined ? pretEmag : 0;
+    const commissionDecimalValue = commissionEmag / 100;
+    const profitPerPiece = effectivePretEmag > 0
+      ? effectivePretEmag - (effectivePretEmag * commissionDecimalValue) - costMaterialPerPiece - electricityPerPiece
+      : 0;
+
+    // 6. Profit per hour = profitPerPiece * printPerHour
+    const profitPerHour = profitPerPiece * printPerHour;
+
+      return {
+        electricity: electricity.toFixed(2),
+        printPerHour: printPerHour.toFixed(2),
+        bestPrice: bestPrice.toFixed(2),
+        targetPerHour: targetPerHour.toFixed(2),
+        profitPerPiece: profitPerPiece.toFixed(2),
+        profitPerHour: profitPerHour.toFixed(2),
+      };
   }, [electricitySettings]);
 
   const addNewRow = useCallback(() => {
+    setAddProductModalVisible(true);
+    addProductForm.resetFields();
+    addProductForm.setFieldsValue({ isMultipleParts: false });
+  }, [addProductForm]);
+
+  const handleAddProduct = useCallback((values) => {
+    const { isMultipleParts, productName, sku } = values;
     const newProduct = {
       key: Date.now().toString(),
-      productName: '',
-      sku: '', // SKU pentru preluarea prețului de pe eMAG
-      printTime: 226,
-      stackSize: 1,
-      costMaterial: 7.54,
+      productName: productName || '',
+      sku: sku || '',
+      isMultipleParts: isMultipleParts || false,
       targetPerHour: 22, // 🎯 Target lei/oră (valoare fixă, editabilă)
       commissionEmag: 10,
       pretEmag: 0, // Prețul real din eMAG România (hardcoded, editabil)
     };
+
+    if (isMultipleParts) {
+      // Produs cu multiple părți - inițializăm cu o parte goală
+      newProduct.parts = [{
+        key: Date.now().toString() + '-part-0',
+        partName: '',
+        printTime: null,
+        stackSize: null,
+        costMaterial: null,
+      }];
+    } else {
+      // Produs simplu - fără valori default
+      newProduct.printTime = null;
+      newProduct.stackSize = null;
+      newProduct.costMaterial = null;
+    }
+
     setProducts(prev => [...prev, newProduct]);
+    setAddProductModalVisible(false);
     setEditingKey(newProduct.key);
+    message.success('Product added successfully');
   }, []);
 
   const handleCellChange = useCallback((recordKey, dataIndex, value) => {
@@ -181,6 +318,56 @@ export default function ProductivityCalculatorPage() {
       }
       return item;
     }));
+  }, []);
+
+  const handlePartChange = useCallback((productKey, partKey, field, value) => {
+    setProducts(prev => prev.map(item => {
+      if (item.key === productKey && item.isMultipleParts && item.parts) {
+        return {
+          ...item,
+          parts: item.parts.map(part => {
+            if (part.key === partKey) {
+              return { ...part, [field]: value };
+            }
+            return part;
+          })
+        };
+      }
+      return item;
+    }));
+  }, []);
+
+  const addPart = useCallback((productKey) => {
+    setProducts(prev => prev.map(item => {
+      if (item.key === productKey && item.isMultipleParts) {
+        const newPart = {
+          key: Date.now().toString() + '-part-' + (item.parts?.length || 0),
+          partName: '',
+          printTime: null,
+          stackSize: null,
+          costMaterial: null,
+        };
+        return {
+          ...item,
+          parts: [...(item.parts || []), newPart]
+        };
+      }
+      return item;
+    }));
+  }, []);
+
+  const removePart = useCallback((productKey, partKey) => {
+    setProducts(prev => prev.map(item => {
+      if (item.key === productKey && item.isMultipleParts && item.parts) {
+        const newParts = item.parts.filter(part => part.key !== partKey);
+        if (newParts.length === 0) {
+          // Dacă nu mai sunt părți, ștergem produsul
+          return null;
+        }
+        return { ...item, parts: newParts };
+      }
+      return item;
+    }).filter(Boolean));
   }, []);
 
   const fetchAllEmagPrices = useCallback(async () => {
@@ -269,7 +456,33 @@ export default function ProductivityCalculatorPage() {
 
   const save = useCallback((key) => {
     setEditingKey('');
+    setEditingParts(prev => {
+      const newState = { ...prev };
+      delete newState[key];
+      return newState;
+    });
     message.success('Product saved');
+  }, []);
+
+  const editParts = useCallback((productKey) => {
+    setEditingParts(prev => ({ ...prev, [productKey]: true }));
+  }, []);
+
+  const saveParts = useCallback((productKey) => {
+    setEditingParts(prev => {
+      const newState = { ...prev };
+      delete newState[productKey];
+      return newState;
+    });
+    message.success('Parts saved');
+  }, []);
+
+  const cancelParts = useCallback((productKey) => {
+    setEditingParts(prev => {
+      const newState = { ...prev };
+      delete newState[productKey];
+      return newState;
+    });
   }, []);
 
   const EditableCell = React.memo(({ editing, dataIndex, title, record, children, inputType = 'text', ...restProps }) => {
@@ -350,9 +563,14 @@ export default function ProductivityCalculatorPage() {
       title: 'Object',
       dataIndex: 'productName',
       key: 'productName',
-      width: 300,
+      width: 250,
       editable: true,
-      render: (text) => text || <span style={{ color: '#999' }}>—</span>,
+      render: (text, record) => {
+        if (record.isMultipleParts) {
+          return <strong style={{ color: theme.COLORS.primary }}>{text || <span style={{ color: '#999' }}>—</span>}</strong>;
+        }
+        return text || <span style={{ color: '#999' }}>—</span>;
+      },
     },
     {
       title: 'SKU',
@@ -363,13 +581,26 @@ export default function ProductivityCalculatorPage() {
       render: (text) => text || <span style={{ color: '#999' }}>—</span>,
     },
     {
-      title: 'preț minim viabil',
-      key: 'breakEvenPrice',
+      title: 'Multiple Parts',
+      key: 'isMultipleParts',
+      width: 120,
+      align: 'center',
+      render: (_, record) => (
+        record.isMultipleParts ? (
+          <span style={{ color: theme.COLORS.primary, fontWeight: 600 }}>Yes ({record.parts?.length || 0})</span>
+        ) : (
+          <span style={{ color: '#999' }}>No</span>
+        )
+      ),
+    },
+    {
+      title: 'best price',
+      key: 'bestPrice',
       width: 180,
       align: 'right',
       render: (_, record) => {
         const calc = calculateRow(record);
-        return <strong style={{ color: theme.COLORS.text.muted || '#64748b', fontSize: '16px' }}>{calc.breakEvenPrice}</strong>;
+        return <strong style={{ color: theme.COLORS.text.muted || '#64748b', fontSize: '16px' }}>{calc.bestPrice}</strong>;
       },
     },
     {
@@ -377,7 +608,7 @@ export default function ProductivityCalculatorPage() {
       dataIndex: 'pretEmag',
       key: 'pretEmag',
       width: 200,
-      editable: true,
+      editable: false, // Nu este editabil - se preia doar de pe eMAG
       inputType: 'decimal',
       align: 'right',
       render: (value) => (
@@ -385,27 +616,45 @@ export default function ProductivityCalculatorPage() {
       ),
     },
     {
-      title: '🎯 target RON/ora',
-      dataIndex: 'targetPerHour',
-      key: 'targetPerHour',
+      title: 'profit per item',
+      key: 'profitPerPiece',
       width: 180,
-      editable: true,
-      inputType: 'decimal',
-      align: 'right',
-      render: (value) => <span style={{ fontSize: '15px', fontWeight: 600 }}>{parseFloat(value || 22).toFixed(2)}</span>,
-    },
-    {
-      title: '🎯 target / piesă',
-      key: 'targetPerPiece',
-      width: 195,
       align: 'right',
       render: (_, record) => {
         const calc = calculateRow(record);
-        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{calc.targetPerPiece}</span>;
+        const profit = parseFloat(calc.profitPerPiece);
+        return (
+          <span style={{ 
+            fontSize: '15px', 
+            fontWeight: 600,
+            color: profit >= 0 ? theme.COLORS.success || '#52c41a' : theme.COLORS.error || '#ff4d4f'
+          }}>
+            {calc.profitPerPiece}
+          </span>
+        );
       },
     },
     {
-      title: 'print per hour',
+      title: 'profit per hour',
+      key: 'profitPerHour',
+      width: 180,
+      align: 'right',
+      render: (_, record) => {
+        const calc = calculateRow(record);
+        const profit = parseFloat(calc.profitPerHour);
+        return (
+          <span style={{ 
+            fontSize: '15px', 
+            fontWeight: 600,
+            color: profit >= 0 ? theme.COLORS.success || '#52c41a' : theme.COLORS.error || '#ff4d4f'
+          }}>
+            {calc.profitPerHour}
+          </span>
+        );
+      },
+    },
+    {
+      title: 'printed items/h',
       key: 'printPerHour',
       width: 180,
       align: 'right',
@@ -415,7 +664,17 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'electricity',
+      title: 'target print rate (RON/h)',
+      dataIndex: 'targetPerHour',
+      key: 'targetPerHour',
+      width: 180,
+      editable: true,
+      inputType: 'decimal',
+      align: 'right',
+      render: (value) => <span style={{ fontSize: '15px', fontWeight: 600 }}>{parseFloat(value || 22).toFixed(2)}</span>,
+    },
+    {
+      title: 'electricity cost',
       key: 'electricity',
       width: 150,
       align: 'right',
@@ -425,34 +684,34 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'print time',
-      dataIndex: 'printTime',
-      key: 'printTime',
-      width: 150,
-      editable: true,
-      inputType: 'number',
-      align: 'right',
-      render: (value) => <span style={{ fontSize: '15px' }}>{value || 0}</span>,
-    },
-    {
-      title: 'stack size',
+      title: 'plate stack size',
       dataIndex: 'stackSize',
       key: 'stackSize',
       width: 150,
-      editable: true,
+      editable: (record) => !record.isMultipleParts,
       inputType: 'number',
       align: 'right',
-      render: (value) => <span style={{ fontSize: '15px' }}>{value || 1}</span>,
+      render: (value, record) => {
+        if (record.isMultipleParts) {
+          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
+        }
+        return <span style={{ fontSize: '15px' }}>{value || 1}</span>;
+      },
     },
     {
       title: 'cost material',
       dataIndex: 'costMaterial',
       key: 'costMaterial',
       width: 180,
-      editable: true,
+      editable: (record) => !record.isMultipleParts,
       inputType: 'decimal',
       align: 'right',
-      render: (value) => <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>,
+      render: (value, record) => {
+        if (record.isMultipleParts) {
+          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
+        }
+        return <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>;
+      },
     },
     {
       title: 'comision emag',
@@ -519,21 +778,37 @@ export default function ProductivityCalculatorPage() {
   
   const mergedColumns = useMemo(() => {
     return columns.map((col) => {
-      if (!col.editable) {
+      // Verifică dacă coloana este editabilă (poate fi boolean sau funcție)
+      const isEditable = typeof col.editable === 'function' 
+        ? (record) => col.editable(record)
+        : col.editable;
+      
+      if (!isEditable) {
         return col;
       }
       return {
         ...col,
-        onCell: (record) => ({
-          record,
-          inputType: col.inputType || 'text',
-          dataIndex: col.dataIndex,
-          title: col.title,
-          editing: isEditing(record),
-        }),
+        onCell: (record) => {
+          // Verifică dacă această coloană este editabilă pentru acest record
+          const editable = typeof col.editable === 'function' 
+            ? col.editable(record)
+            : col.editable;
+          
+          if (!editable) {
+            return { record };
+          }
+          
+          return {
+            record,
+            inputType: col.inputType || 'text',
+            dataIndex: col.dataIndex,
+            title: col.title,
+            editing: isEditing(record),
+          };
+        },
       };
     });
-  }, [columns, editingKey]);
+  }, [columns, editingKey, isEditing]);
 
   return (
     <MainLayout currentKey="calculator">
@@ -638,20 +913,192 @@ export default function ProductivityCalculatorPage() {
           <Spin spinning={loading}>
             <Table
               className="productivity-table"
-            components={{
-              body: {
-                cell: EditableCell,
-              },
-            }}
-            columns={mergedColumns}
-            dataSource={products}
-            rowKey="key"
-            pagination={false}
-            locale={theme.TABLE_CONFIG.locale}
-            style={theme.TABLE_CONFIG.tableStyle}
-            rowClassName={() => theme.TABLE_CONFIG.rowClassName}
-            size="small"
-          />
+              components={{
+                body: {
+                  cell: EditableCell,
+                },
+              }}
+              columns={mergedColumns}
+              dataSource={products}
+              rowKey="key"
+              pagination={false}
+              locale={theme.TABLE_CONFIG.locale}
+              style={theme.TABLE_CONFIG.tableStyle}
+              rowClassName={() => theme.TABLE_CONFIG.rowClassName}
+              size="small"
+              expandable={{
+                expandedRowKeys: expandedRows,
+                onExpandedRowsChange: setExpandedRows,
+                expandedRowRender: (record) => {
+                  if (!record.isMultipleParts || !record.parts || record.parts.length === 0) {
+                    return null;
+                  }
+                  
+                  const isEditingParts = editingParts[record.key];
+                  
+                  const partColumns = [
+                    {
+                      title: 'Part Name',
+                      dataIndex: 'partName',
+                      key: 'partName',
+                      width: 200,
+                      render: (text, partRecord) => {
+                        if (isEditingParts) {
+                          return (
+                            <Input
+                              value={text || ''}
+                              onChange={(e) => handlePartChange(record.key, partRecord.key, 'partName', e.target.value)}
+                              placeholder="Part name"
+                              style={{ width: '100%' }}
+                            />
+                          );
+                        }
+                        return <span>{text || <span style={{ color: '#999' }}>—</span>}</span>;
+                      },
+                    },
+                    {
+                      title: 'Plate Print Time',
+                      dataIndex: 'printTime',
+                      key: 'printTime',
+                      width: 150,
+                      align: 'right',
+                      render: (value, partRecord) => {
+                        if (isEditingParts) {
+                          return (
+                            <InputNumber
+                              value={value !== null && value !== undefined ? value : undefined}
+                              onChange={(val) => handlePartChange(record.key, partRecord.key, 'printTime', val)}
+                              min={0}
+                              placeholder="—"
+                              style={{ width: '100%' }}
+                            />
+                          );
+                        }
+                        return <span>{value !== null && value !== undefined ? value : <span style={{ color: '#999' }}>—</span>}</span>;
+                      },
+                    },
+                    {
+                      title: 'Plate Stack Size',
+                      dataIndex: 'stackSize',
+                      key: 'stackSize',
+                      width: 150,
+                      align: 'right',
+                      render: (value, partRecord) => {
+                        if (isEditingParts) {
+                          return (
+                            <InputNumber
+                              value={value !== null && value !== undefined ? value : undefined}
+                              onChange={(val) => handlePartChange(record.key, partRecord.key, 'stackSize', val)}
+                              min={1}
+                              placeholder="—"
+                              style={{ width: '100%' }}
+                            />
+                          );
+                        }
+                        return <span>{value !== null && value !== undefined ? value : <span style={{ color: '#999' }}>—</span>}</span>;
+                      },
+                    },
+                    {
+                      title: 'Cost Material',
+                      dataIndex: 'costMaterial',
+                      key: 'costMaterial',
+                      width: 150,
+                      align: 'right',
+                      render: (value, partRecord) => {
+                        if (isEditingParts) {
+                          return (
+                            <InputNumber
+                              value={value !== null && value !== undefined ? value : undefined}
+                              onChange={(val) => handlePartChange(record.key, partRecord.key, 'costMaterial', val)}
+                              min={0}
+                              step={0.01}
+                              precision={2}
+                              placeholder="—"
+                              style={{ width: '100%' }}
+                            />
+                          );
+                        }
+                        return <span>{value !== null && value !== undefined ? parseFloat(value).toFixed(2) : <span style={{ color: '#999' }}>—</span>}</span>;
+                      },
+                    },
+                    {
+                      title: 'Actions',
+                      key: 'actions',
+                      width: 150,
+                      render: (_, partRecord) => {
+                        if (isEditingParts) {
+                          return (
+                            <Button
+                              type="link"
+                              danger
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              onClick={() => removePart(record.key, partRecord.key)}
+                            >
+                              Remove
+                            </Button>
+                          );
+                        }
+                        return null;
+                      },
+                    },
+                  ];
+
+                  return (
+                    <div style={{ padding: '16px', background: theme.COLORS.primaryLight, borderRadius: theme.RADIUS.md }}>
+                      <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text strong style={{ fontSize: '16px' }}>Parts ({record.parts.length})</Text>
+                        <Space>
+                          {isEditingParts ? (
+                            <>
+                              <Button
+                                type="primary"
+                                size="small"
+                                icon={<SaveOutlined />}
+                                onClick={() => saveParts(record.key)}
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => cancelParts(record.key)}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                type="primary"
+                                size="small"
+                                icon={<PlusCircleOutlined />}
+                                onClick={() => addPart(record.key)}
+                              >
+                                Add Part
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => editParts(record.key)}
+                              >
+                                Edit
+                              </Button>
+                            </>
+                          )}
+                        </Space>
+                      </div>
+                      <Table
+                        columns={partColumns}
+                        dataSource={record.parts}
+                        rowKey="key"
+                        pagination={false}
+                        size="small"
+                      />
+                    </div>
+                  );
+                },
+                rowExpandable: (record) => record.isMultipleParts && record.parts && record.parts.length > 0,
+              }}
+            />
           </Spin>
           {products.length === 0 && !loading && (
             <div style={{ 
@@ -664,6 +1111,76 @@ export default function ProductivityCalculatorPage() {
             </div>
           )}
         </Card>
+
+        <Modal
+          title="Add New Product"
+          open={addProductModalVisible}
+          onCancel={() => {
+            setAddProductModalVisible(false);
+            addProductForm.resetFields();
+          }}
+          onOk={async () => {
+            try {
+              const values = await addProductForm.validateFields();
+              handleAddProduct(values);
+            } catch (error) {
+              console.error('Validation failed:', error);
+            }
+          }}
+          okText="Add Product"
+          cancelText="Cancel"
+          width={600}
+        >
+          <Form
+            form={addProductForm}
+            layout="vertical"
+            initialValues={{ isMultipleParts: false }}
+          >
+            <Form.Item
+              name="isMultipleParts"
+              label="Multiple Parts Product?"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              name="productName"
+              label="Product Name"
+              rules={[{ required: true, message: 'Please enter product name' }]}
+            >
+              <Input placeholder="Enter product name" />
+            </Form.Item>
+            <Form.Item
+              name="sku"
+              label="SKU"
+            >
+              <Input placeholder="Enter SKU (optional)" />
+            </Form.Item>
+            <Form.Item
+              noStyle
+              shouldUpdate={(prevValues, currentValues) => prevValues.isMultipleParts !== currentValues.isMultipleParts}
+            >
+              {({ getFieldValue }) => {
+                const isMultipleParts = getFieldValue('isMultipleParts');
+                if (isMultipleParts) {
+                  return (
+                    <div style={{ 
+                      marginTop: 16, 
+                      padding: 12, 
+                      background: theme.COLORS.primaryLight, 
+                      borderRadius: theme.RADIUS.md 
+                    }}>
+                      <Text type="secondary" style={{ fontSize: '13px' }}>
+                        This product will have multiple parts. You can add parts after creating the product by expanding the row.
+                      </Text>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            </Form.Item>
+          </Form>
+        </Modal>
 
         <Modal
           title="Electricity Settings"
