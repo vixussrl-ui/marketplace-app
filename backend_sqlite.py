@@ -246,75 +246,67 @@ class EMAGClient:
             return [], 1, 0
 
     async def fetch_product_price(self, sku):
-        """Preluează prețul unui produs de pe eMAG folosind SKU"""
+        """Preluează prețul unui produs de pe eMAG folosind SKU (part_number)"""
         try:
             headers = {
                 "Authorization": self._get_auth_header(),
                 "Content-Type": "application/json",
             }
+            
+            # Conform documentației eMAG, folosim product_offer/read cu filtru part_number
+            # URL: MARKETPLACE_API_URL/product_offer/read
+            offer_url = f"{self.api_url}/product_offer/read"
+            
+            # Payload conform documentației: filtru part_number
             payload = {
                 "data": {
-                    "sku": sku
+                    "part_number": sku
                 }
             }
             
-            # Încercăm mai multe endpoint-uri posibile pentru a prelua prețul
-            # eMAG API poate folosi: /offer/read, /product/read, sau /offer/listing
-            endpoints_to_try = [
-                f"{self.base_url}/offer/read",
-                f"{self.base_url}/product/read",
-                f"{self.base_url}/offer/listing"
-            ]
-            
-            print(f"[EMAG] Fetching price for SKU: {sku}")
+            print(f"[EMAG] Fetching price for SKU (part_number): {sku}")
+            print(f"[EMAG] Using endpoint: {offer_url}")
             
             async with httpx.AsyncClient(timeout=30.0) as client:
-                for offer_url in endpoints_to_try:
-                    try:
-                        print(f"[EMAG] Trying endpoint: {offer_url}")
-                        response = await client.post(offer_url, json=payload, headers=headers)
-                        print(f"[EMAG] Response status: {response.status_code}")
-                        
-                        if response.status_code == 404:
-                            continue  # Încercăm următorul endpoint
-                        
-                        response.raise_for_status()
-                        data = response.json()
-                        
-                        if data.get("isError"):
-                            error_msg = data.get("messages", ["Unknown error"])
-                            print(f"[ERROR] EMAG API error: {error_msg}")
-                            continue  # Încercăm următorul endpoint
-                        
-                        # Extragem prețul din răspuns
-                        results = data.get("results", [])
-                        if results and len(results) > 0:
-                            offer = results[0]
-                            # Încercăm mai multe câmpuri posibile pentru preț
-                            price = (offer.get("sale_price") or 
-                                    offer.get("price") or 
-                                    offer.get("current_price") or
-                                    offer.get("selling_price") or
-                                    offer.get("final_price"))
-                            if price:
-                                print(f"[EMAG] Found price: {price} from endpoint: {offer_url}")
-                                return float(price)
-                        
-                        # Dacă nu găsim preț în results, verificăm direct în data
-                        if "sale_price" in data:
-                            price = data.get("sale_price") or data.get("price")
-                            if price:
-                                print(f"[EMAG] Found price: {price} from endpoint: {offer_url}")
-                                return float(price)
-                    except httpx.HTTPStatusError as e:
-                        if e.response.status_code == 404:
-                            continue  # Încercăm următorul endpoint
-                        raise
-                    except Exception as e:
-                        print(f"[EMAG] Error with endpoint {offer_url}: {e}")
-                        continue  # Încercăm următorul endpoint
+                response = await client.post(offer_url, json=payload, headers=headers)
+                print(f"[EMAG] Response status: {response.status_code}")
                 
+                if response.status_code == 404:
+                    print(f"[EMAG] Product not found for SKU: {sku}")
+                    return None
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get("isError"):
+                    error_msg = data.get("messages", ["Unknown error"])
+                    print(f"[ERROR] EMAG API error: {error_msg}")
+                    return None
+                
+                # Extragem prețul din răspuns conform documentației
+                # product_offer/read returnează un array de produse în "results"
+                results = data.get("results", [])
+                if results and len(results) > 0:
+                    offer = results[0]
+                    # Conform documentației, prețul este în câmpul "sale_price" (fără TVA)
+                    price = offer.get("sale_price")
+                    if price:
+                        print(f"[EMAG] Found price: {price} for SKU: {sku}")
+                        return float(price)
+                
+                print(f"[EMAG] No price found in response for SKU: {sku}")
                 return None
+                    
+        except httpx.HTTPStatusError as e:
+            print(f"[EMAG] HTTP error {e.response.status_code}: {e}")
+            if e.response.status_code == 404:
+                return None
+            raise
+        except Exception as e:
+            print(f"[ERROR] Error fetching EMAG product price: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
         except Exception as e:
             print(f"[ERROR] Error fetching EMAG product price: {type(e).__name__}: {e}")
             import traceback
@@ -1107,11 +1099,12 @@ async def get_emag_product_price(request: Request):
         raise HTTPException(status_code=400, detail="credential_id is required")
     
     # Preluăm credentialele din baza de date
-    conn = get_db_connection()
-    cred = conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         "SELECT * FROM credentials WHERE id = ? AND user_id = ?",
         (credential_id, user["id"])
-    ).fetchone()
+    )
+    cred = cur.fetchone()
     
     if not cred:
         raise HTTPException(status_code=404, detail="Credential not found")
