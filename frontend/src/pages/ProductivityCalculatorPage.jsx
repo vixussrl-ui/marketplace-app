@@ -594,32 +594,32 @@ export default function ProductivityCalculatorPage() {
       ),
     },
     {
-      title: 'best price',
+      title: 'Best Price',
       key: 'bestPrice',
       width: 180,
-      align: 'right',
+      align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
         return <strong style={{ color: theme.COLORS.text.muted || '#64748b', fontSize: '16px' }}>{calc.bestPrice}</strong>;
       },
     },
     {
-      title: 'pret emag romania',
+      title: 'EMAG RO Price',
       dataIndex: 'pretEmag',
       key: 'pretEmag',
       width: 200,
       editable: false, // Nu este editabil - se preia doar de pe eMAG
       inputType: 'decimal',
-      align: 'right',
+      align: 'center',
       render: (value) => (
         <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>
       ),
     },
     {
-      title: 'profit per item',
+      title: 'Profit/item',
       key: 'profitPerPiece',
       width: 180,
-      align: 'right',
+      align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
         const profit = parseFloat(calc.profitPerPiece);
@@ -635,10 +635,10 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'profit per hour',
+      title: 'Profit/hour',
       key: 'profitPerHour',
       width: 180,
-      align: 'right',
+      align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
         const profit = parseFloat(calc.profitPerHour);
@@ -654,37 +654,37 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'printed items/h',
+      title: 'Printed items/hour',
       key: 'printPerHour',
       width: 180,
-      align: 'right',
+      align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
         return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{calc.printPerHour}</span>;
       },
     },
     {
-      title: 'target print rate (RON/h)',
+      title: 'Target Print Rate (RON/H)',
       dataIndex: 'targetPerHour',
       key: 'targetPerHour',
       width: 180,
       editable: true,
       inputType: 'decimal',
-      align: 'right',
+      align: 'center',
       render: (value) => <span style={{ fontSize: '15px', fontWeight: 600 }}>{parseFloat(value || 22).toFixed(2)}</span>,
     },
     {
-      title: 'electricity cost',
+      title: 'Electricity Cost',
       key: 'electricity',
       width: 150,
-      align: 'right',
+      align: 'center',
       render: (_, record) => {
         const calc = calculateRow(record);
         return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{calc.electricity}</span>;
       },
     },
     {
-      title: 'plate stack size',
+      title: 'Plate Stack Size',
       dataIndex: 'stackSize',
       key: 'stackSize',
       width: 150,
@@ -699,13 +699,13 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'cost material',
+      title: 'Material Cost',
       dataIndex: 'costMaterial',
       key: 'costMaterial',
       width: 180,
       editable: (record) => !record.isMultipleParts,
       inputType: 'decimal',
-      align: 'right',
+      align: 'center',
       render: (value, record) => {
         if (record.isMultipleParts) {
           return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
@@ -714,13 +714,13 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'comision emag',
+      title: 'EMAG Commission',
       dataIndex: 'commissionEmag',
       key: 'commissionEmag',
       width: 180,
       editable: true,
       inputType: 'decimal',
-      align: 'right',
+      align: 'center',
       render: (value) => <span style={{ fontSize: '15px' }}>{parseFloat(value || 10).toFixed(1)}</span>,
     },
     {
@@ -999,7 +999,7 @@ export default function ProductivityCalculatorPage() {
                       },
                     },
                     {
-                      title: 'Cost Material',
+                      title: 'Material Cost',
                       dataIndex: 'costMaterial',
                       key: 'costMaterial',
                       width: 150,
