@@ -32,6 +32,7 @@ export default function ProductivityCalculatorPage() {
   const [addProductForm] = Form.useForm();
   const [expandedRows, setExpandedRows] = useState([]);
   const [editingParts, setEditingParts] = useState({}); // { productKey: true/false }
+  const [initialProductValues, setInitialProductValues] = useState({}); // { productKey: {...original values} }
 
   // Load products and settings from server on mount
   useEffect(() => {
@@ -137,8 +138,8 @@ export default function ProductivityCalculatorPage() {
       printTime = 0,        // H - print time în minute
       stackSize = 1,         // I - stack size
       costMaterial = 0,      // J - cost material (TOTAL per print)
+      packagingCost = 0,     // Cost ambalaj (per produs final)
       targetPerHour = 22,    // 🎯 Target lei/oră (valoare fixă, editabilă)
-      commissionEmag = 10,   // K - comision emag (%)
       pretEmag = 0,          // Prețul real din eMAG (hardcoded, editabil)
     } = record;
 
@@ -156,8 +157,6 @@ export default function ProductivityCalculatorPage() {
       let totalElectricityPerPiece = 0; // Suma costurilor de electricitate per piesă pentru toate părțile
       let totalPrintTimePerPiece = 0; // Suma timpului per piesă pentru toate părțile (secvențial)
       let hasValidParts = false;
-      
-      const commissionDecimal = commissionEmag / 100;
       
       // Pentru fiecare parte, calculăm independent: bestPrice, costuri
       // Părțile sunt printate secvențial, deci timpul total = suma timpului per piesă pentru fiecare parte
@@ -187,11 +186,9 @@ export default function ProductivityCalculatorPage() {
         const partElectricityPerPiece = partStackSize > 0 ? partElectricity / partStackSize : 0;
         totalElectricityPerPiece += partElectricityPerPiece;
         
-        // Best price pentru această parte (calculat independent)
+        // Best price pentru această parte (calculat independent) - FĂRĂ comision
         const partTargetPerPiece = partPrintPerHour > 0 ? effectiveTargetPerHour / partPrintPerHour : 0;
-        const partBestPrice = (partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece) > 0
-          ? (partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece) / (1 - commissionDecimal)
-          : 0;
+        const partBestPrice = partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece;
         
         // Adunăm bestPrice-urile pentru a obține prețul total
         totalBestPrice += partBestPrice;
@@ -214,13 +211,18 @@ export default function ProductivityCalculatorPage() {
       
       // Costuri totale per piesă (suma tuturor părților)
       // totalCostMaterialPerPiece și totalElectricityPerPiece sunt deja calculate ca sume per piesă
+      
+      // Packaging cost per piesă (cost fix per produs final, nu per print)
+      const effectivePackagingCost = packagingCost !== null && packagingCost !== undefined ? packagingCost : 0;
+      
+      // Best price trebuie să includă și packaging cost
+      totalBestPrice += effectivePackagingCost;
 
-      // Profit REAL per piesă = pretEmag - (pretEmag * commissionEmag) - totalCostMaterialPerPiece - totalElectricityPerPiece
-      // Profit contabil real: cât îți rămâne în mână după comision + costuri (FĂRĂ target)
+      // Profit REAL per piesă = pretEmag - totalCostMaterialPerPiece - totalElectricityPerPiece - packagingCost
+      // Profit contabil real: cât îți rămâne în mână după costuri (FĂRĂ target, FĂRĂ comision)
       const effectivePretEmag = pretEmag !== null && pretEmag !== undefined ? pretEmag : 0;
-      const commissionDecimalValue = commissionEmag / 100;
       const profitPerPiece = effectivePretEmag > 0
-        ? effectivePretEmag - (effectivePretEmag * commissionDecimalValue) - totalCostMaterialPerPiece - totalElectricityPerPiece
+        ? effectivePretEmag - totalCostMaterialPerPiece - totalElectricityPerPiece - effectivePackagingCost
         : 0;
 
       // Profit per hour = profitPerPiece * printPerHour
@@ -252,22 +254,20 @@ export default function ProductivityCalculatorPage() {
     const costMaterialPerPiece = effectiveStackSize > 0 ? effectiveCostMaterial / effectiveStackSize : 0;
     const electricityPerPiece = effectiveStackSize > 0 ? electricity / effectiveStackSize : 0;
     
-    const commissionDecimal = commissionEmag / 100;
+    // Packaging cost per piesă (cost fix per produs final, nu per print)
+    const effectivePackagingCost = packagingCost !== null && packagingCost !== undefined ? packagingCost : 0;
     
-    // 4. Best price = (targetRONperHour / printPerHour + costMaterialPerPiece + electricityPerPiece) / (1 - commissionEmag)
-    // Cel mai bun preț de vânzare pentru a atinge target-ul de profit pe oră
+    // 4. Best price = targetRONperHour / printPerHour + costMaterialPerPiece + electricityPerPiece + packagingCost
+    // Cel mai bun preț de vânzare pentru a atinge target-ul de profit pe oră (FĂRĂ comision)
     // effectiveTargetPerHour este deja declarat la începutul funcției
     const targetPerPieceForPricing = printPerHour > 0 ? effectiveTargetPerHour / printPerHour : 0;
-    const bestPrice = (targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece) > 0
-      ? (targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece) / (1 - commissionDecimal)
-      : 0;
+    const bestPrice = targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece + effectivePackagingCost;
 
-    // 5. Profit REAL per piesă = pretEmag - (pretEmag * commissionEmag) - costMaterialPerPiece - electricityPerPiece
-    // Profit contabil real: cât îți rămâne în mână după comision + costuri (FĂRĂ target)
+    // 5. Profit REAL per piesă = pretEmag - costMaterialPerPiece - electricityPerPiece - packagingCost
+    // Profit contabil real: cât îți rămâne în mână după costuri (FĂRĂ target, FĂRĂ comision)
     const effectivePretEmag = pretEmag !== null && pretEmag !== undefined ? pretEmag : 0;
-    const commissionDecimalValue = commissionEmag / 100;
     const profitPerPiece = effectivePretEmag > 0
-      ? effectivePretEmag - (effectivePretEmag * commissionDecimalValue) - costMaterialPerPiece - electricityPerPiece
+      ? effectivePretEmag - costMaterialPerPiece - electricityPerPiece - effectivePackagingCost
       : 0;
 
     // 6. Profit per hour = profitPerPiece * printPerHour
@@ -297,7 +297,6 @@ export default function ProductivityCalculatorPage() {
       sku: sku || '',
       isMultipleParts: isMultipleParts || false,
       targetPerHour: targetPerHour !== null && targetPerHour !== undefined ? targetPerHour : null, // null = folosește setarea globală
-      commissionEmag: 10,
       pretEmag: 0, // Prețul real din eMAG România (hardcoded, editabil)
     };
 
@@ -315,6 +314,7 @@ export default function ProductivityCalculatorPage() {
       newProduct.printTime = null;
       newProduct.stackSize = null;
       newProduct.costMaterial = null;
+      newProduct.packagingCost = null;
     }
 
     setProducts(prev => [...prev, newProduct]);
@@ -324,30 +324,38 @@ export default function ProductivityCalculatorPage() {
   }, []);
 
   const handleCellChange = useCallback((recordKey, dataIndex, value) => {
-    setProducts(prev => prev.map(item => {
-      if (item.key === recordKey) {
-        return { ...item, [dataIndex]: value };
-      }
-      return item;
-    }));
-  }, []);
+    // Salvează modificările doar dacă suntem în modul de editare
+    // Aceste modificări vor fi aplicate permanent doar când se dă Save
+    if (editingKey === recordKey) {
+      setProducts(prev => prev.map(item => {
+        if (item.key === recordKey) {
+          return { ...item, [dataIndex]: value };
+        }
+        return item;
+      }));
+    }
+  }, [editingKey]);
 
   const handlePartChange = useCallback((productKey, partKey, field, value) => {
-    setProducts(prev => prev.map(item => {
-      if (item.key === productKey && item.isMultipleParts && item.parts) {
-        return {
-          ...item,
-          parts: item.parts.map(part => {
-            if (part.key === partKey) {
-              return { ...part, [field]: value };
-            }
-            return part;
-          })
-        };
-      }
-      return item;
-    }));
-  }, []);
+    // Salvează modificările doar dacă suntem în modul de editare
+    // Aceste modificări vor fi aplicate permanent doar când se dă Save
+    if (editingKey === productKey) {
+      setProducts(prev => prev.map(item => {
+        if (item.key === productKey && item.isMultipleParts && item.parts) {
+          return {
+            ...item,
+            parts: item.parts.map(part => {
+              if (part.key === partKey) {
+                return { ...part, [field]: value };
+              }
+              return part;
+            })
+          };
+        }
+        return item;
+      }));
+    }
+  }, [editingKey]);
 
   const addPart = useCallback((productKey) => {
     setProducts(prev => prev.map(item => {
@@ -459,6 +467,11 @@ export default function ProductivityCalculatorPage() {
   const isEditing = useCallback((record) => record.key === editingKey, [editingKey]);
 
   const edit = useCallback((record) => {
+    // Salvează valorile inițiale ale produsului înainte de editare
+    setInitialProductValues(prev => ({
+      ...prev,
+      [record.key]: JSON.parse(JSON.stringify(record)) // Deep copy
+    }));
     setEditingKey(record.key);
     // Expandă automat rândul dacă este produs cu multiple parts
     if (record.isMultipleParts && !expandedRows.includes(record.key)) {
@@ -467,8 +480,22 @@ export default function ProductivityCalculatorPage() {
   }, [expandedRows]);
 
   const cancel = useCallback(() => {
+    if (editingKey && initialProductValues[editingKey]) {
+      // Resetează produsul la valorile inițiale
+      setProducts(prev => prev.map(item => {
+        if (item.key === editingKey) {
+          return initialProductValues[editingKey];
+        }
+        return item;
+      }));
+    }
     setEditingKey('');
-  }, []);
+    setInitialProductValues(prev => {
+      const newState = { ...prev };
+      delete newState[editingKey];
+      return newState;
+    });
+  }, [editingKey, initialProductValues]);
 
   // Listen for Escape key to cancel editing
   useEffect(() => {
@@ -489,6 +516,12 @@ export default function ProductivityCalculatorPage() {
   const save = useCallback((key) => {
     setEditingKey('');
     setEditingParts(prev => {
+      const newState = { ...prev };
+      delete newState[key];
+      return newState;
+    });
+    // Șterge valorile inițiale salvate după salvare
+    setInitialProductValues(prev => {
       const newState = { ...prev };
       delete newState[key];
       return newState;
@@ -540,7 +573,9 @@ export default function ProductivityCalculatorPage() {
     
     const handleKeyPress = (e) => {
       if (e.key === 'Enter') {
-        handleBlur();
+        if (record && record.key) {
+          handleCellChange(record.key, dataIndex, localValue);
+        }
         if (inputRef.current) {
           inputRef.current.blur();
         }
@@ -614,7 +649,9 @@ export default function ProductivityCalculatorPage() {
     
     const handleKeyPress = (e) => {
       if (e.key === 'Enter') {
-        handleBlur();
+        if (partRecord && partRecord.key && productKey) {
+          handlePartChange(productKey, partRecord.key, dataIndex, localValue);
+        }
         if (inputRef.current) {
           inputRef.current.blur();
         }
@@ -676,26 +713,26 @@ export default function ProductivityCalculatorPage() {
       ),
       dataIndex: 'productName',
       key: 'productName',
-      width: 250,
+      width: 300,
       editable: true,
       render: (text, record) => {
+        const productName = text || '';
+        const sku = record.sku || '';
+        const content = (
+          <span>
+            {productName}
+            {sku && (
+              <span style={{ color: '#999', marginLeft: '8px', fontSize: '14px' }}>
+                ({sku})
+              </span>
+            )}
+          </span>
+        );
         if (record.isMultipleParts) {
-          return <strong style={{ color: theme.COLORS.primary }}>{text || <span style={{ color: '#999' }}>—</span>}</strong>;
+          return <strong style={{ color: theme.COLORS.primary }}>{content}</strong>;
         }
-        return text || <span style={{ color: '#999' }}>—</span>;
+        return content;
       },
-    },
-    {
-      title: (
-        <Tooltip title="Stock Keeping Unit - the unique identifier for the product. Used to fetch the price from eMAG API.">
-          <span>SKU</span>
-        </Tooltip>
-      ),
-      dataIndex: 'sku',
-      key: 'sku',
-      width: 150,
-      editable: true,
-      render: (text) => text || <span style={{ color: '#999' }}>—</span>,
     },
     {
       title: (
@@ -716,7 +753,7 @@ export default function ProductivityCalculatorPage() {
     },
     {
       title: (
-        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: (Target per piece + Material Cost per piece + Electricity Cost per piece) / (1 - EMAG Commission %). For multiple parts products, this is the sum of best prices for all parts.">
+        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: Target per piece + Material Cost per piece + Electricity Cost per piece + Packaging Cost per piece. For multiple parts products, this is the sum of best prices for all parts plus packaging cost.">
           <span>Best Price (RON)</span>
         </Tooltip>
       ),
@@ -746,7 +783,7 @@ export default function ProductivityCalculatorPage() {
     },
     {
       title: (
-        <Tooltip title="Real profit per item after all costs and commissions. Calculated as: EMAG RO Price - (EMAG RO Price * Commission %) - Material Cost per piece - Electricity Cost per piece. This represents the actual accounting profit, not a target.">
+        <Tooltip title="Real profit per item after all costs. Calculated as: EMAG RO Price - Material Cost per piece - Electricity Cost per piece - Packaging Cost per piece. This represents the actual accounting profit, not a target.">
           <span>Profit/item (RON)</span>
         </Tooltip>
       ),
@@ -847,20 +884,6 @@ export default function ProductivityCalculatorPage() {
     },
     {
       title: (
-        <Tooltip title="eMAG marketplace commission percentage. This percentage is deducted from the selling price when calculating profit. Default is 10%.">
-          <span>EMAG Commission</span>
-        </Tooltip>
-      ),
-      dataIndex: 'commissionEmag',
-      key: 'commissionEmag',
-      width: 190,
-      editable: true,
-      inputType: 'decimal',
-      align: 'center',
-      render: (value) => <span style={{ fontSize: '15px' }}>{formatNumber(value || 10, 1)}</span>,
-    },
-    {
-      title: (
         <Tooltip title="Total print time in minutes for one plate. For multiple parts products, this is not applicable at the product level - each part has its own print time.">
           <span>Plate Print Time</span>
         </Tooltip>
@@ -926,6 +949,20 @@ export default function ProductivityCalculatorPage() {
         }
         return <span style={{ fontSize: '15px' }}>{formatNumber(value || 0, 2)}</span>;
       },
+    },
+    {
+      title: (
+        <Tooltip title="Packaging cost per product (carton, plastic bags, etc.). This is a fixed cost per final product, not per print. Editable for all products, including those with multiple parts.">
+          <span>Packaging Costs (RON)</span>
+        </Tooltip>
+      ),
+      dataIndex: 'packagingCost',
+      key: 'packagingCost',
+      width: 200,
+      editable: true, // Editabil pentru toate produsele, inclusiv cele cu multiple parts
+      inputType: 'decimal',
+      align: 'center',
+      render: (value) => <span style={{ fontSize: '15px' }}>{formatNumber(value || 0, 2)}</span>,
     },
     {
       title: (
@@ -1063,7 +1100,7 @@ export default function ProductivityCalculatorPage() {
           title={
             <Space>
               <Title level={4} style={{ margin: 0, fontSize: '24px', fontWeight: 600 }}>
-                Productivity Calculator
+                Print costs
               </Title>
             </Space>
           }
@@ -1175,17 +1212,6 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="Stock Keeping Unit - the unique identifier for the product. Used to fetch the price from eMAG API.">
-                          <span>SKU</span>
-                        </Tooltip>
-                      ),
-                      key: 'dummy-sku',
-                      width: 150,
-                      align: 'center',
-                      render: () => <span style={{ color: '#999' }}>—</span>,
-                    },
-                    {
-                      title: (
                         <Tooltip title="Indicates if the product consists of multiple parts that are printed sequentially. For multiple parts products, each part has its own print time, stack size, and material cost.">
                           <span>Multiple Parts</span>
                         </Tooltip>
@@ -1197,7 +1223,7 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: (Target per piece + Material Cost per piece + Electricity Cost per piece) / (1 - EMAG Commission %). For multiple parts products, this is the sum of best prices for all parts.">
+                        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: Target per piece + Material Cost per piece + Electricity Cost per piece + Packaging Cost per piece. For multiple parts products, this is the sum of best prices for all parts plus packaging cost.">
                           <span>Best Price (RON)</span>
                         </Tooltip>
                       ),
@@ -1219,7 +1245,7 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="Real profit per item after all costs and commissions. Calculated as: EMAG RO Price - (EMAG RO Price * Commission %) - Material Cost per piece - Electricity Cost per piece. This represents the actual accounting profit, not a target.">
+                        <Tooltip title="Real profit per item after all costs. Calculated as: EMAG RO Price - Material Cost per piece - Electricity Cost per piece - Packaging Cost per piece. This represents the actual accounting profit, not a target.">
                           <span>Profit/item (RON)</span>
                         </Tooltip>
                       ),
@@ -1291,20 +1317,6 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="eMAG marketplace commission percentage. This percentage is deducted from the selling price when calculating profit. Default is 10%.">
-                          <span>EMAG Commission</span>
-                        </Tooltip>
-                      ),
-                      key: 'emag-commission',
-                      width: 190,
-                      align: 'center',
-                      render: () => {
-                        const commissionEmag = record.commissionEmag !== null && record.commissionEmag !== undefined ? record.commissionEmag : 10;
-                        return <span style={{ fontSize: '15px' }}>{formatNumber(commissionEmag, 1)}</span>;
-                      },
-                    },
-                    {
-                      title: (
                         <Tooltip title="Total print time in minutes for one plate. For multiple parts products, this is not applicable at the product level - each part has its own print time.">
                           <span>Plate Print Time</span>
                         </Tooltip>
@@ -1367,6 +1379,17 @@ export default function ProductivityCalculatorPage() {
                           precision={2}
                         />
                       ),
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Packaging cost per product (carton, plastic bags, etc.). This is a fixed cost per final product, not per print. Not editable at part level - set at the main product level.">
+                          <span>Packaging Costs (RON)</span>
+                        </Tooltip>
+                      ),
+                      key: 'packaging-cost',
+                      width: 200,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
                     },
                     {
                       title: (

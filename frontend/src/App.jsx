@@ -5,6 +5,7 @@ import SignupPage from './pages/SignupPage';
 import PlatformsPage from './pages/PlatformsPage';
 import OrdersPage from './pages/OrdersPage';
 import ProductivityCalculatorPage from './pages/ProductivityCalculatorPage';
+import MarketplacePriceSetPage from './pages/MarketplacePriceSetPage';
 import './App.css';
 
 function PrivateRoute({ children }) {
@@ -40,6 +41,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <ProductivityCalculatorPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/marketplace-price-set"
+          element={
+            <PrivateRoute>
+              <MarketplacePriceSetPage />
             </PrivateRoute>
           }
         />

@@ -45,11 +45,13 @@ export default function MainLayout({ children, currentKey }) {
             if (info.key === 'orders') navigate('/orders');
             if (info.key === 'settings') navigate('/platforms');
             if (info.key === 'calculator') navigate('/calculator');
+            if (info.key === 'marketplace-price-set') navigate('/marketplace-price-set');
           }}
           className="main-menu"
           items={[
             { key: 'orders', label: 'Orders' },
-            { key: 'calculator', label: 'Calculator' },
+            { key: 'calculator', label: 'Print costs' },
+            { key: 'marketplace-price-set', label: 'Marketplace Price Set' },
             { key: 'settings', label: 'Settings' }
           ]}
         />
