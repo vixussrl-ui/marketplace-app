@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, Table, InputNumber, Typography, Space, message, Spin, Button, Modal, Form, Input, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
 import { calculatorAPI } from '../api';
@@ -103,8 +103,12 @@ export default function MarketplacePriceSetPage() {
   const [marketplaces, setMarketplaces] = useState([]); // [{ id, name, commission, transportCost }]
   const [addMarketplaceModalVisible, setAddMarketplaceModalVisible] = useState(false);
   const [addProductModalVisible, setAddProductModalVisible] = useState(false);
+  const [editMarketplaceModalVisible, setEditMarketplaceModalVisible] = useState(false);
+  const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
+  const [isEditingMarketplaces, setIsEditingMarketplaces] = useState(false);
   const [marketplaceForm] = Form.useForm();
   const [productForm] = Form.useForm();
+  const [editMarketplaceForm] = Form.useForm();
 
   // Combine calculator products and manual products for display
   const products = useMemo(() => {
@@ -215,6 +219,44 @@ export default function MarketplacePriceSetPage() {
     message.success('Marketplace removed');
   }, []);
 
+  // Edit marketplace
+  const handleEditMarketplace = useCallback((marketplaceId) => {
+    const marketplace = marketplaces.find(m => m.id === marketplaceId);
+    if (marketplace) {
+      setEditingMarketplaceId(marketplaceId);
+      editMarketplaceForm.setFieldsValue({
+        name: marketplace.name,
+        commission: marketplace.commission,
+        transportCost: marketplace.transportCost
+      });
+      setEditMarketplaceModalVisible(true);
+    }
+  }, [marketplaces, editMarketplaceForm]);
+
+  // Save edited marketplace
+  const handleSaveMarketplace = useCallback(async () => {
+    try {
+      const values = await editMarketplaceForm.validateFields();
+      setMarketplaces(prev => prev.map(m => {
+        if (m.id === editingMarketplaceId) {
+          return {
+            ...m,
+            name: values.name,
+            commission: values.commission || 0,
+            transportCost: values.transportCost || 0
+          };
+        }
+        return m;
+      }));
+      setEditMarketplaceModalVisible(false);
+      setEditingMarketplaceId(null);
+      editMarketplaceForm.resetFields();
+      message.success('Marketplace updated successfully');
+    } catch (error) {
+      console.error('Validation failed:', error);
+    }
+  }, [editMarketplaceForm, editingMarketplaceId]);
+
   // Add new manual product
   const handleAddProduct = useCallback(async () => {
     try {
@@ -299,39 +341,44 @@ export default function MarketplacePriceSetPage() {
           justifyContent: 'center',
           position: 'relative',
           width: '100%',
-          paddingRight: '32px' // Spațiu pentru buton
+          paddingRight: isEditingMarketplaces ? '0' : '32px', // Spațiu pentru buton doar când nu e în edit mode
+          minWidth: '150px'
         }}>
-          <span style={{ textAlign: 'center', flex: 1 }}>{marketplace.name}</span>
-          <Popconfirm
-            title={`Delete marketplace "${marketplace.name}"?`}
-            onConfirm={() => handleRemoveMarketplace(marketplace.id)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button
-              type="text"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              style={{ 
-                position: 'absolute',
-                right: 0,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                padding: '0',
-                minWidth: 'auto',
-                width: '24px',
-                height: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            />
-          </Popconfirm>
+          <span style={{ textAlign: 'center', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{marketplace.name}</span>
+          {!isEditingMarketplaces && (
+            <Popconfirm
+              title={`Delete marketplace "${marketplace.name}"?`}
+              onConfirm={() => handleRemoveMarketplace(marketplace.id)}
+              okText="Yes"
+              cancelText="No"
+            >
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                style={{ 
+                  position: 'absolute',
+                  right: 0,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  padding: '0',
+                  minWidth: 'auto',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              />
+            </Popconfirm>
+          )}
         </div>
       ),
       key: `marketplace-${marketplace.id}`,
-      width: 200,
+      width: 180,
+      minWidth: 150,
       align: 'center',
       render: (_, record) => {
         const price = calculateMarketplacePrice(record, marketplace);
@@ -340,15 +387,54 @@ export default function MarketplacePriceSetPage() {
             display: 'flex', 
             justifyContent: 'center', 
             alignItems: 'center',
-            width: '100%'
+            width: '100%',
+            flexDirection: 'column',
+            gap: isEditingMarketplaces ? '8px' : '0'
           }}>
-            <strong style={{ 
-              color: theme.COLORS.primary || '#1890ff', 
-              fontSize: '16px',
-              fontWeight: 600
-            }}>
-              {formatNumber(price, 2)}
-            </strong>
+            {!isEditingMarketplaces ? (
+              <strong style={{ 
+                color: theme.COLORS.primary || '#1890ff', 
+                fontSize: '16px',
+                fontWeight: 600
+              }}>
+                {formatNumber(price, 2)}
+              </strong>
+            ) : (
+              <>
+                <strong style={{ 
+                  color: theme.COLORS.primary || '#1890ff', 
+                  fontSize: '16px',
+                  fontWeight: 600
+                }}>
+                  {formatNumber(price, 2)}
+                </strong>
+                <Space size="small">
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => handleEditMarketplace(marketplace.id)}
+                  >
+                    Edit
+                  </Button>
+                  <Popconfirm
+                    title={`Delete marketplace "${marketplace.name}"?`}
+                    onConfirm={() => handleRemoveMarketplace(marketplace.id)}
+                    okText="Yes"
+                    cancelText="No"
+                  >
+                    <Button
+                      type="link"
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                    >
+                      Delete
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </>
+            )}
           </div>
         );
       },
@@ -392,18 +478,31 @@ export default function MarketplacePriceSetPage() {
     <MainLayout currentKey="marketplace-price-set">
       <style>
         {`
+          .ant-layout-content.content-area {
+            max-width: 2800px !important;
+          }
           .marketplace-price-table .ant-table-tbody > tr > td {
-            padding: 12px 16px !important;
+            padding: 8px 12px !important;
             font-size: 15px !important;
           }
           .marketplace-price-table .ant-table-thead > tr > th {
-            padding: 12px 16px !important;
+            padding: 10px 12px !important;
             background: ${theme.COLORS.primaryLight} !important;
             font-weight: 600 !important;
             font-size: 16px !important;
           }
           .marketplace-price-table .ant-table-tbody > tr:hover > td {
             background: ${theme.COLORS.primaryLight} !important;
+          }
+          .marketplace-price-table .ant-table-wrapper {
+            overflow-x: auto;
+            width: 100%;
+          }
+          .marketplace-price-table .ant-table-container {
+            overflow-x: auto !important;
+          }
+          .marketplace-price-table .ant-table {
+            min-width: 100%;
           }
           .marketplace-price-table input,
           .marketplace-price-table .ant-input-number {
@@ -452,6 +551,18 @@ export default function MarketplacePriceSetPage() {
                 Add Product
               </Button>
               <Button
+                icon={<EditOutlined />}
+                onClick={() => setIsEditingMarketplaces(!isEditingMarketplaces)}
+                type={isEditingMarketplaces ? 'primary' : 'default'}
+                style={{
+                  fontSize: '15px',
+                  padding: '6px 16px',
+                  height: 'auto'
+                }}
+              >
+                {isEditingMarketplaces ? 'Done Editing' : 'Edit'}
+              </Button>
+              <Button
                 type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => setAddMarketplaceModalVisible(true)}
@@ -483,7 +594,7 @@ export default function MarketplacePriceSetPage() {
               style={theme.TABLE_CONFIG.tableStyle}
               rowClassName={() => theme.TABLE_CONFIG.rowClassName}
               size="small"
-              scroll={{ x: 'max-content' }}
+              scroll={{ x: 'max-content', y: undefined }}
             />
           </Spin>
           {products.length === 0 && !loading && (
@@ -594,6 +705,67 @@ export default function MarketplacePriceSetPage() {
               rules={[
                 { required: true, message: 'Please enter best price' },
                 { type: 'number', min: 0, message: 'Best price must be positive' }
+              ]}
+            >
+              <InputNumber
+                min={0}
+                step={0.01}
+                precision={2}
+                placeholder="0.00"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        {/* Edit Marketplace Modal */}
+        <Modal
+          title="Edit Marketplace"
+          open={editMarketplaceModalVisible}
+          onCancel={() => {
+            setEditMarketplaceModalVisible(false);
+            setEditingMarketplaceId(null);
+            editMarketplaceForm.resetFields();
+          }}
+          onOk={handleSaveMarketplace}
+          okText="Save Changes"
+          cancelText="Cancel"
+          width={500}
+        >
+          <Form
+            form={editMarketplaceForm}
+            layout="vertical"
+          >
+            <Form.Item
+              name="name"
+              label="Marketplace Name"
+              rules={[{ required: true, message: 'Please enter marketplace name' }]}
+            >
+              <Input placeholder="e.g., eMAG, Amazon, etc." />
+            </Form.Item>
+            <Form.Item
+              name="commission"
+              label="Commission (%)"
+              rules={[
+                { required: true, message: 'Please enter commission percentage' },
+                { type: 'number', min: 0, max: 99.99, message: 'Commission must be between 0 and 99.99%' }
+              ]}
+            >
+              <InputNumber
+                min={0}
+                max={99.99}
+                step={0.1}
+                precision={2}
+                placeholder="0.00"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="transportCost"
+              label="Transport Cost (RON)"
+              rules={[
+                { required: true, message: 'Please enter transport cost' },
+                { type: 'number', min: 0, message: 'Transport cost must be positive' }
               ]}
             >
               <InputNumber
