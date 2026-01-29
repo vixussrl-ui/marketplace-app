@@ -76,11 +76,9 @@ def init_db():
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS calculator_products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            products_data TEXT NOT NULL,
+            user_id INTEGER PRIMARY KEY,
+            products TEXT NOT NULL,
             electricity_settings TEXT,
-            updated_at TEXT NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
         """
@@ -154,20 +152,11 @@ class SignupRequest(BaseModel):
 
 # EMAG Client
 class EMAGClient:
-    def __init__(self, client_id, client_secret, vendor_code, country="ro"):
+    def __init__(self, client_id, client_secret, vendor_code):
         self.client_id = client_id
         self.client_secret = client_secret
         self.vendor_code = vendor_code
-        # Determină URL-ul API bazat pe țară
-        if country.lower() in ["hu", "hungary", "ungaria"]:
-            self.base_url = "https://marketplace-api.emag.hu/api-3"
-            self.api_url = f"{self.base_url}/order/read"
-        elif country.lower() in ["bg", "bulgaria", "bulgaria"]:
-            self.base_url = "https://marketplace-api.emag.bg/api-3"
-            self.api_url = f"{self.base_url}/order/read"
-        else:
-            self.base_url = "https://marketplace-api.emag.ro/api-3"
-            self.api_url = f"{self.base_url}/order/read"
+        self.api_url = "https://marketplace-api.emag.ro/api-3/order/read"
         self.status_map = {
             0: "canceled",
             1: "new",
@@ -210,16 +199,11 @@ class EMAGClient:
                 if data.get("isError"):
                     error_msg = data.get("messages", ["Unknown error"])
                     print(f"[ERROR] EMAG API error: {error_msg}")
-                    return [], 1, 0
+                    return []
 
                 orders = []
                 raw_orders = data.get("results", [])
-                # Verificăm dacă există informații despre paginare
-                total_count = data.get("totalCount", len(raw_orders))
-                current_page = data.get("currentPage", page)
-                total_pages = data.get("totalPages", 1)
-                
-                print(f"[EMAG] Processing {len(raw_orders)} orders (page {current_page}/{total_pages}, total: {total_count})")
+                print(f"[EMAG] Processing {len(raw_orders)} orders")
 
                 for order in raw_orders:
                     status_val = order.get("status")
@@ -250,12 +234,12 @@ class EMAGClient:
                     orders.append(order_data)
 
                 print(f"[OK] Successfully parsed {len(orders)} orders")
-                return orders, total_pages, total_count
+                return orders
         except Exception as e:
             print(f"[ERROR] Error fetching EMAG orders: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
-            return [], 1, 0
+            return []
 
     async def fetch_product_price(self, sku):
         """Preluează prețul unui produs de pe eMAG folosind SKU (part_number)"""
@@ -266,9 +250,7 @@ class EMAGClient:
             }
             
             # Conform documentației eMAG, folosim product_offer/read cu filtru part_number
-            # URL: MARKETPLACE_API_URL/product_offer/read
-            # Folosim base_url, nu api_url (care este pentru order/read)
-            offer_url = f"{self.base_url}/product_offer/read"
+            offer_url = "https://marketplace-api.emag.ro/api-3/product_offer/read"
             
             # Payload conform documentației: filtru part_number
             payload = {
@@ -304,22 +286,10 @@ class EMAGClient:
                     # Conform documentației, prețul este în câmpul "sale_price" (fără TVA)
                     price = offer.get("sale_price")
                     if price:
-                        print(f"[EMAG] Found price: {price} for SKU: {sku}")
+                        print(f"[EMAG] Found price: {price} from endpoint: {offer_url}")
                         return float(price)
                 
-                print(f"[EMAG] No price found in response for SKU: {sku}")
                 return None
-                    
-        except httpx.HTTPStatusError as e:
-            print(f"[EMAG] HTTP error {e.response.status_code}: {e}")
-            if e.response.status_code == 404:
-                return None
-            raise
-        except Exception as e:
-            print(f"[ERROR] Error fetching EMAG product price: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
         except Exception as e:
             print(f"[ERROR] Error fetching EMAG product price: {type(e).__name__}: {e}")
             import traceback
@@ -399,33 +369,6 @@ class TrendyolClient:
                         order.get("status"), order.get("status", "unknown")
                     )
 
-                    # Detectăm țara bazat pe câmpurile disponibile în răspunsul API
-                    country_code = None
-                    # Încearcă să găsească countryCode în diferite locații
-                    if "shipmentAddress" in order and order["shipmentAddress"]:
-                        country_code = order["shipmentAddress"].get("countryCode")
-                    if not country_code and "invoiceAddress" in order and order["invoiceAddress"]:
-                        country_code = order["invoiceAddress"].get("countryCode")
-                    if not country_code and "address" in order and order["address"]:
-                        country_code = order["address"].get("countryCode")
-                    if not country_code and "storeFrontCode" in order:
-                        store_front = order.get("storeFrontCode", "").upper()
-                        if store_front == "GR":
-                            country_code = "GR"
-                        elif store_front == "RO":
-                            country_code = "RO"
-                    
-                    # Log pentru debugging (doar pentru primele comenzi)
-                    if len(orders) < 3:
-                        print(f"[TRENDYOL] Order {order.get('orderNumber')} - Full order keys: {list(order.keys())}")
-                        if "shipmentAddress" in order:
-                            print(f"[TRENDYOL] Order {order.get('orderNumber')} - shipmentAddress: {order.get('shipmentAddress')}")
-                        if "invoiceAddress" in order:
-                            print(f"[TRENDYOL] Order {order.get('orderNumber')} - invoiceAddress: {order.get('invoiceAddress')}")
-                        if "storeFrontCode" in order:
-                            print(f"[TRENDYOL] Order {order.get('orderNumber')} - storeFrontCode: {order.get('storeFrontCode')}")
-                        print(f"[TRENDYOL] Order {order.get('orderNumber')} - Detected country_code: {country_code}")
-
                     items = []
                     for line in order.get("lines", []):
                         item_data = {
@@ -440,27 +383,13 @@ class TrendyolClient:
                         }
                         items.append(item_data)
 
-                    # Determină marketplace-ul bazat pe country_code
-                    marketplace_country = "RO"  # Default
-                    if country_code:
-                        country_upper = str(country_code).upper()
-                        if country_upper in ["GR", "GREECE", "GRECIA"]:
-                            marketplace_country = "GR"
-                        elif country_upper in ["RO", "ROMANIA", "ROMÂNIA"]:
-                            marketplace_country = "RO"
-
-                    # Setăm vendor_code cu țara pentru a putea diferenția în frontend
-                    vendor_code_with_country = f"trendyol_{marketplace_country.lower()}"
-
                     order_data = {
                         "order_id": str(order.get("orderNumber")),
                         "status": status_text,
                         "order_type": 3,
-                        "vendor_code": vendor_code_with_country,  # "trendyol_ro" sau "trendyol_gr"
+                        "vendor_code": "trendyol",
                         "created_at": self._convert_timestamp(order.get("orderDate")),
                         "items": items,
-                        "country_code": country_code,  # Salvăm country_code pentru debugging
-                        "marketplace_country": marketplace_country,  # RO sau GR
                     }
                     orders.append(order_data)
 
@@ -482,126 +411,6 @@ class TrendyolClient:
         except Exception as e:
             print(f"[TRENDYOL] Error converting timestamp: {e}")
             return str(timestamp_ms)
-
-
-# Etsy Client
-class EtsyClient:
-    def __init__(self, access_token, shop_id):
-        self.access_token = access_token
-        self.shop_id = shop_id
-        self.base_url = "https://api.etsy.com/v3"
-        self.status_map = {
-            "open": "new",
-            "payment_processing": "payment processing",
-            "payment_review": "payment review",
-            "canceled": "canceled",
-            "completed": "completed",
-            "refunded": "refunded",
-        }
-
-    def _get_auth_header(self):
-        return f"Bearer {self.access_token}"
-
-    async def fetch_orders(self, min_created=None, max_created=None, limit=100, offset=0):
-        """
-        Fetch orders (receipts) from Etsy shop
-        Etsy API v3 endpoint: GET /application/shops/{shop_id}/receipts
-        """
-        try:
-            url = f"{self.base_url}/application/shops/{self.shop_id}/receipts"
-            params = {
-                "limit": limit,
-                "offset": offset,
-            }
-            if min_created:
-                params["min_created"] = int(min_created)
-            if max_created:
-                params["max_created"] = int(max_created)
-
-            headers = {
-                "Authorization": self._get_auth_header(),
-                "x-api-key": self.access_token,  # Etsy API v3 necesită x-api-key pentru autentificare
-                "Content-Type": "application/json",
-            }
-
-            print(f"[ETSY] Fetching orders from {url} with params: {params}")
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, headers=headers, params=params)
-                print(f"[ETSY] Response status: {response.status_code}")
-
-                if response.status_code == 401:
-                    print(f"[ERROR] ETSY Authentication failed (401)")
-                    return [], 0, 0
-
-                response.raise_for_status()
-                data = response.json()
-
-                orders = []
-                raw_orders = data.get("results", [])
-                count = data.get("count", len(raw_orders))
-                
-                print(f"[ETSY] Processing {len(raw_orders)} orders (offset {offset}, count: {count})")
-
-                for receipt in raw_orders:
-                    # Etsy folosește "receipt_type" pentru status
-                    receipt_type = receipt.get("receipt_type", "unknown")
-                    if receipt_type == "open":
-                        status_text = "new"
-                    elif receipt_type == "payment_processing":
-                        status_text = "payment processing"
-                    elif receipt_type == "payment_review":
-                        status_text = "payment review"
-                    elif receipt_type == "completed":
-                        status_text = "completed"
-                    elif receipt_type == "canceled":
-                        status_text = "canceled"
-                    elif receipt_type == "refunded":
-                        status_text = "refunded"
-                    else:
-                        status_text = receipt_type
-
-                    items = []
-                    for transaction in receipt.get("transactions", []):
-                        item_data = {
-                            "sku": transaction.get("product_data", {}).get("sku") 
-                                or transaction.get("listing_id", ""),
-                            "name": transaction.get("title") or "Unknown Product",
-                            "qty": transaction.get("quantity", 0),
-                            "price": float(transaction.get("price", {}).get("amount", 0)) / 100 
-                                if transaction.get("price", {}).get("amount") else 0,
-                        }
-                        items.append(item_data)
-
-                    # Convertim timestamp-ul Etsy (Unix timestamp în secunde)
-                    created_timestamp = receipt.get("creation_timestamp")
-                    created_at = None
-                    if created_timestamp:
-                        try:
-                            dt = datetime.fromtimestamp(int(created_timestamp))
-                            created_at = dt.strftime("%Y-%m-%d %H:%M:%S")
-                        except Exception:
-                            created_at = str(created_timestamp)
-
-                    order_data = {
-                        "order_id": str(receipt.get("receipt_id")),
-                        "status": status_text,
-                        "order_type": 3,
-                        "vendor_code": "etsy",
-                        "created_at": created_at,
-                        "items": items,
-                    }
-                    orders.append(order_data)
-
-                print(f"[OK] Successfully parsed {len(orders)} Etsy orders")
-                # Etsy returnează count, nu total_pages
-                total_pages = (count + limit - 1) // limit if count > 0 else 1
-                return orders, total_pages, count
-        except Exception as e:
-            print(f"[ERROR] Error fetching Etsy orders: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            return [], 0, 0
 
 
 # Oblio Client (pentru stocuri)
@@ -844,7 +653,6 @@ async def get_platforms():
         {"id": 1, "name": "emag", "display_name": "eMAG", "is_active": True},
         {"id": 2, "name": "trendyol", "display_name": "Trendyol", "is_active": True},
         {"id": 3, "name": "oblio", "display_name": "Oblio (Stocuri)", "is_active": True},
-        {"id": 4, "name": "etsy", "display_name": "Etsy", "is_active": True},
     ]
 
 
@@ -861,7 +669,7 @@ async def create_credential(request: Request, data: dict):
         raise HTTPException(
             status_code=400, detail="account_label and platform_id are required"
         )
-    if platform_id not in (1, 2, 3, 4):
+    if platform_id not in (1, 2, 3):
         raise HTTPException(status_code=400, detail="Invalid platform_id")
     if not vendor_code:
         raise HTTPException(status_code=400, detail="vendor_code is required")
@@ -964,9 +772,9 @@ async def list_orders(request: Request, credential_id: Optional[int] = None):
     user = get_current_user(request)
     
     # Statusuri permise:
-    # EMAG: "new" (1), "in progress" (2), "prepared" (3) și "finalized" (4)
+    # EMAG: "new" (1) și "in progress" (2)
     # Trendyol: "new" (Created), "processing" (Picking), "invoiced" (Invoiced)
-    allowed_statuses = ['new', 'in progress', 'prepared', 'finalized', 'processing', 'invoiced', 'payment processing', 'payment review']
+    allowed_statuses = ['new', 'in progress', 'processing', 'invoiced']
     
     if credential_id:
         cur = conn.execute(
@@ -1098,132 +906,6 @@ async def test_trendyol(credential_id: int, request: Request):
     
     return {"test_results": test_results}
 
-@app.post("/emag/product/price")
-async def get_emag_product_price(request: Request):
-    """Preluează prețul unui produs de pe eMAG folosind SKU"""
-    user = get_current_user(request)
-    data = await request.json()
-    sku = data.get("sku")
-    credential_id = data.get("credential_id")
-    
-    if not sku:
-        raise HTTPException(status_code=400, detail="SKU is required")
-    if not credential_id:
-        raise HTTPException(status_code=400, detail="credential_id is required")
-    
-    # Preluăm credentialele din baza de date
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT * FROM credentials WHERE id = ? AND user_id = ?",
-        (credential_id, user["id"])
-    )
-    cred = cur.fetchone()
-    
-    if not cred:
-        raise HTTPException(status_code=404, detail="Credential not found")
-    
-    cred_d = row_to_dict(cred)
-    platform = cred_d.get("platform")
-    
-    # Verificăm dacă platforma este eMAG (poate fi ID numeric sau string)
-    if platform != "emag" and platform != 1 and platform != "1":
-        raise HTTPException(status_code=400, detail="This endpoint is only for eMAG credentials")
-    
-    # Detectăm țara
-    account_label = cred_d.get("account_label", "").upper()
-    country = "ro"
-    if any(keyword in account_label for keyword in ["HU", "HUNGARY", "UNGARIA", "EMAG.HU"]):
-        country = "hu"
-    elif any(keyword in account_label for keyword in ["BG", "BULGARIA", "EMAG.BG"]):
-        country = "bg"
-    
-    # Creăm clientul eMAG
-    client = EMAGClient(
-        client_id=cred_d.get("client_id"),
-        client_secret=cred_d.get("client_secret", ""),
-        vendor_code=cred_d.get("vendor_code", ""),
-        country=country
-    )
-    
-    # Preluăm prețul
-    price = await client.fetch_product_price(sku)
-    
-    if price is None:
-        raise HTTPException(status_code=404, detail="Product price not found")
-    
-    return {"sku": sku, "price": price}
-
-
-@app.get("/calculator/products")
-async def get_calculator_products(request: Request):
-    """Get calculator products and settings for the current user"""
-    user = get_current_user(request)
-    
-    cur = conn.execute(
-        "SELECT products_data, electricity_settings FROM calculator_products WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
-        (user["id"],)
-    )
-    row = cur.fetchone()
-    
-    if not row:
-        return {
-            "products": [],
-            "electricity_settings": {
-                "printerConsumption": 0.12,
-                "electricityCost": 1.11
-            }
-        }
-    
-    products_data = json.loads(row["products_data"]) if row["products_data"] else []
-    electricity_settings = json.loads(row["electricity_settings"]) if row["electricity_settings"] else {
-        "printerConsumption": 0.12,
-        "electricityCost": 1.11
-    }
-    
-    return {
-        "products": products_data,
-        "electricity_settings": electricity_settings
-    }
-
-
-@app.put("/calculator/products")
-async def save_calculator_products(request: Request):
-    """Save calculator products for the current user"""
-    user = get_current_user(request)
-    data = await request.json()
-    
-    products = data.get("products", [])
-    electricity_settings = data.get("electricity_settings", {})
-    
-    products_json = json.dumps(products)
-    electricity_json = json.dumps(electricity_settings)
-    updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Check if user already has saved products
-    cur = conn.execute(
-        "SELECT id FROM calculator_products WHERE user_id = ?",
-        (user["id"],)
-    )
-    existing = cur.fetchone()
-    
-    if existing:
-        # Update existing record
-        conn.execute(
-            "UPDATE calculator_products SET products_data = ?, electricity_settings = ?, updated_at = ? WHERE user_id = ?",
-            (products_json, electricity_json, updated_at, user["id"])
-        )
-    else:
-        # Insert new record
-        conn.execute(
-            "INSERT INTO calculator_products (user_id, products_data, electricity_settings, updated_at) VALUES (?, ?, ?, ?)",
-            (user["id"], products_json, electricity_json, updated_at)
-        )
-    
-    conn.commit()
-    
-    return {"message": "Products saved successfully"}
-
-
 @app.post("/orders/refresh")
 async def refresh_orders(request: Request):
     print(f"[REFRESH] Refresh request started")
@@ -1255,39 +937,14 @@ async def refresh_orders(request: Request):
     try:
         if platform == 1:
             print(f"[REFRESH] Fetching EMAG orders")
-            # Detectăm țara bazat pe account_label
-            account_label = cred_d.get("account_label", "").upper()
-            if any(keyword in account_label for keyword in ["HU", "HUNGARY", "UNGARIA", "EMAG.HU"]):
-                country = "hu"
-            elif any(keyword in account_label for keyword in ["BG", "BULGARIA", "BULGARIA", "EMAG.BG"]):
-                country = "bg"
-            else:
-                country = "ro"
-            print(f"[REFRESH][EMAG] Detected country: {country.upper()} (from account_label: {cred_d.get('account_label', '')})")
             client = EMAGClient(
                 client_id=cred_d["client_id"],
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
-                country=country,
             )
-            # Comenzi noi (1), in progress (2) și prepared (3)
-            print(f"[REFRESH][EMAG] Fetching 'new' (1), 'in progress' (2) and 'prepared' (3) orders for credential_id {cred_id}")
-            new_orders = []
-            page = 1
-            max_pages = 100  # Limita de siguranță
-            while page <= max_pages:
-                orders_batch, total_pages, total_count = await client.fetch_orders(statuses=[1, 2, 3], page=page)
-                if not orders_batch:
-                    print(f"[REFRESH] No more orders at page {page}")
-                    break
-                new_orders.extend(orders_batch)
-                # Log toate order IDs pentru debugging
-                order_ids = [str(o.get("order_id", "")) for o in orders_batch]
-                print(f"[REFRESH] Got {len(orders_batch)} orders at page {page}/{total_pages} (total: {total_count}), Order IDs: {order_ids}")
-                page += 1
-                if page > total_pages:
-                    print(f"[REFRESH] Reached last page ({total_pages})")
-                    break
+            # DOAR comenzi noi (1) și in progress (2)
+            print(f"[REFRESH][EMAG] Fetching ONLY 'new' (1) and 'in progress' (2) orders")
+            new_orders = await client.fetch_orders(statuses=[1, 2])
         elif platform == 2:
             print(f"[REFRESH] Fetching Trendyol orders")
             try:
@@ -1332,73 +989,15 @@ async def refresh_orders(request: Request):
                 import traceback
                 traceback.print_exc()
                 new_orders = []
-        elif platform == 4:
-            print(f"[REFRESH] Fetching Etsy orders")
-            try:
-                # Etsy folosește access_token (OAuth) și shop_id
-                # client_id = access_token, vendor_code = shop_id
-                client = EtsyClient(
-                    access_token=cred_d.get("client_id", ""),
-                    shop_id=cred_d.get("vendor_code", ""),
-                )
-                print(f"[REFRESH] EtsyClient created successfully")
-                
-                # Preluăm comenzile noi (open, payment_processing, payment_review)
-                print(f"[REFRESH][ETSY] Fetching orders with status 'open', 'payment_processing', 'payment_review'")
-                new_orders = []
-                offset = 0
-                limit = 100
-                max_iterations = 100  # Limita de siguranță
-                iteration = 0
-                
-                while iteration < max_iterations:
-                    orders_batch, total_pages, total_count = await client.fetch_orders(
-                        limit=limit, offset=offset
-                    )
-                    if not orders_batch:
-                        print(f"[REFRESH] No more Etsy orders at offset {offset}")
-                        break
-                    
-                    # Filtrăm doar comenzile active (new, payment processing, payment review)
-                    active_orders = [o for o in orders_batch if o.get("status") in ["new", "payment processing", "payment review"]]
-                    new_orders.extend(active_orders)
-                    
-                    print(f"[REFRESH] Got {len(orders_batch)} Etsy orders at offset {offset} (filtered to {len(active_orders)} active), total: {total_count}")
-                    
-                    offset += limit
-                    iteration += 1
-                    
-                    # Dacă am primit mai puține comenzi decât limit-ul, am ajuns la final
-                    if len(orders_batch) < limit:
-                        break
-                        
-            except Exception as etsy_error:
-                print(f"[REFRESH] Etsy error: {etsy_error}")
-                import traceback
-                traceback.print_exc()
-                new_orders = []
         else:
             print(f"[REFRESH] Unknown platform: {platform}")
             raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
 
         print(f"[REFRESH] Got {len(new_orders)} orders, updating database")
         
-        # Eliminăm duplicatele din new_orders (în cazul în care o comandă apare de mai multe ori)
-        seen_order_ids = {}
-        unique_orders = []
-        for order in new_orders:
-            order_id_key = order['order_id']
-            if order_id_key not in seen_order_ids:
-                seen_order_ids[order_id_key] = order
-                unique_orders.append(order)
-            else:
-                print(f"[REFRESH] Duplicate order detected: {order_id_key}, skipping...")
-        
-        print(f"[REFRESH] After deduplication: {len(unique_orders)} unique orders (removed {len(new_orders) - len(unique_orders)} duplicates)")
-        
         # Pas 1: Colectăm ID-urile comenzilor care trebuie să rămână
         new_order_ids = set()
-        for order in unique_orders:
+        for order in new_orders:
             order_id = f"{order['order_id']}-{cred_id}"
             new_order_ids.add(order_id)
             items_json = json.dumps(order.get("items", []))
@@ -1469,6 +1068,115 @@ async def refresh_orders(request: Request):
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
+
+
+@app.post("/emag/product/price")
+async def get_emag_product_price(request: Request, data: dict):
+    """Preluează prețul unui produs de pe eMAG folosind SKU"""
+    user = get_current_user(request)
+    sku = data.get("sku")
+    credential_id = data.get("credential_id")
+    
+    if not sku:
+        raise HTTPException(status_code=400, detail="SKU is required")
+    if not credential_id:
+        raise HTTPException(status_code=400, detail="credential_id is required")
+    
+    # Găsim credențialele eMAG pentru user
+    cur = conn.execute(
+        "SELECT * FROM credentials WHERE id = ? AND user_id = ? AND platform = 1",
+        (credential_id, user["id"])
+    )
+    cred = cur.fetchone()
+    
+    if not cred:
+        raise HTTPException(status_code=404, detail="eMAG credential not found")
+    
+    cred_d = row_to_dict(cred)
+    
+    try:
+        client = EMAGClient(
+            client_id=cred_d.get("client_id", ""),
+            client_secret=cred_d.get("client_secret", ""),
+            vendor_code=cred_d.get("vendor_code", "")
+        )
+        
+        price = await client.fetch_product_price(sku)
+        
+        if price is None:
+            return {"price": None, "message": "Product price not found"}
+        
+        return {"price": price}
+    
+    except Exception as e:
+        print(f"[ERROR] Error fetching EMAG product price: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/calculator/products")
+async def get_calculator_products(request: Request):
+    """Preluează produsele și setările calculatorului pentru user"""
+    user = get_current_user(request)
+    
+    cur = conn.execute(
+        "SELECT * FROM calculator_products WHERE user_id = ?",
+        (user["id"],)
+    )
+    row = cur.fetchone()
+    
+    if not row:
+        return {
+            "products": [],
+            "electricity_settings": {
+                "printerConsumption": 0.12,
+                "electricityCost": 1.11
+            }
+        }
+    
+    row_dict = row_to_dict(row)
+    products = json.loads(row_dict.get("products", "[]"))
+    electricity_settings = json.loads(row_dict.get("electricity_settings", "{}")) if row_dict.get("electricity_settings") else {
+        "printerConsumption": 0.12,
+        "electricityCost": 1.11
+    }
+    
+    return {
+        "products": products,
+        "electricity_settings": electricity_settings
+    }
+
+
+@app.put("/calculator/products")
+async def save_calculator_products(request: Request, data: dict):
+    """Salvează produsele și setările calculatorului pentru user"""
+    user = get_current_user(request)
+    products = data.get("products", [])
+    electricity_settings = data.get("electricity_settings", {})
+    
+    products_json = json.dumps(products)
+    electricity_settings_json = json.dumps(electricity_settings)
+    
+    try:
+        conn.execute(
+            """
+            INSERT INTO calculator_products (user_id, products, electricity_settings)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                products = excluded.products,
+                electricity_settings = excluded.electricity_settings
+            """,
+            (user["id"], products_json, electricity_settings_json)
+        )
+        conn.commit()
+        
+        return {"message": "Products saved successfully"}
+    except Exception as e:
+        print(f"[ERROR] Error saving calculator products: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
