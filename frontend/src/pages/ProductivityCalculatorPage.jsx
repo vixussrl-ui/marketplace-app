@@ -561,7 +561,84 @@ export default function ProductivityCalculatorPage() {
       prevProps.editing === nextProps.editing &&
       prevProps.dataIndex === nextProps.dataIndex &&
       prevProps.record?.key === nextProps.record?.key &&
-      prevProps.record?.[prevProps.dataIndex] === nextProps.record?.[nextProps.dataIndex]
+      prevProps.record?.[prevProps.dataIndex] === nextProps.record?.[prevProps.dataIndex]
+    );
+  });
+
+  // Component pentru editarea părților (similar cu EditableCell, dar pentru parts)
+  const EditablePartCell = React.memo(({ editing, dataIndex, partRecord, productKey, inputType = 'text', min, step, precision, ...restProps }) => {
+    if (!partRecord || !dataIndex) {
+      return <td {...restProps}><span>{partRecord?.[dataIndex] !== null && partRecord?.[dataIndex] !== undefined ? partRecord[dataIndex] : <span style={{ color: '#999' }}>—</span>}</span></td>;
+    }
+    
+    const [localValue, setLocalValue] = useState(partRecord[dataIndex] !== undefined ? partRecord[dataIndex] : '');
+    const inputRef = useRef(null);
+    
+    // Sync local value when partRecord changes (but only if not currently editing this cell)
+    useEffect(() => {
+      if (!editing) {
+        setLocalValue(partRecord[dataIndex] !== undefined ? partRecord[dataIndex] : '');
+      }
+    }, [partRecord[dataIndex], editing, dataIndex]);
+    
+    const handleBlur = () => {
+      if (partRecord && partRecord.key && productKey) {
+        handlePartChange(productKey, partRecord.key, dataIndex, localValue);
+      }
+    };
+    
+    const handleKeyPress = (e) => {
+      if (e.key === 'Enter') {
+        handleBlur();
+        if (inputRef.current) {
+          inputRef.current.blur();
+        }
+      }
+    };
+    
+    return (
+      <td {...restProps}>
+        {editing ? (
+          inputType === 'number' || inputType === 'decimal' ? (
+            <InputNumber
+              style={{ width: '100%' }}
+              min={min !== undefined ? min : 0}
+              step={step !== undefined ? step : (inputType === 'decimal' ? 0.01 : 1)}
+              precision={precision !== undefined ? precision : (inputType === 'decimal' ? 2 : 0)}
+              value={localValue !== '' && localValue !== undefined && localValue !== null ? localValue : undefined}
+              onChange={(value) => {
+                setLocalValue(value !== null && value !== undefined ? value : '');
+              }}
+              onBlur={handleBlur}
+              onPressEnter={handleKeyPress}
+              placeholder="—"
+            />
+          ) : (
+            <Input
+              ref={inputRef}
+              style={{ width: '100%' }}
+              value={localValue || ''}
+              onChange={(e) => {
+                setLocalValue(e.target.value);
+              }}
+              onBlur={handleBlur}
+              onPressEnter={handleKeyPress}
+              placeholder="Part name"
+            />
+          )
+        ) : (
+          <span>{partRecord[dataIndex] !== null && partRecord[dataIndex] !== undefined ? (inputType === 'decimal' ? parseFloat(partRecord[dataIndex]).toFixed(2) : partRecord[dataIndex]) : <span style={{ color: '#999' }}>—</span>}</span>
+        )}
+      </td>
+    );
+  }, (prevProps, nextProps) => {
+    // Custom comparison to prevent unnecessary re-renders
+    return (
+      prevProps.editing === nextProps.editing &&
+      prevProps.dataIndex === nextProps.dataIndex &&
+      prevProps.partRecord?.key === nextProps.partRecord?.key &&
+      prevProps.partRecord?.[prevProps.dataIndex] === nextProps.partRecord?.[nextProps.dataIndex] &&
+      prevProps.productKey === nextProps.productKey
     );
   });
 
@@ -1061,19 +1138,15 @@ export default function ProductivityCalculatorPage() {
                       dataIndex: 'partName',
                       key: 'partName',
                       width: 250, // Aceeași lățime ca "Object"
-                      render: (text, partRecord) => {
-                        if (isEditingParts) {
-                          return (
-                            <Input
-                              value={text || ''}
-                              onChange={(e) => handlePartChange(record.key, partRecord.key, 'partName', e.target.value)}
-                              placeholder="Part name"
-                              style={{ width: '100%' }}
-                            />
-                          );
-                        }
-                        return <span>{text || <span style={{ color: '#999' }}>—</span>}</span>;
-                      },
+                      render: (text, partRecord) => (
+                        <EditablePartCell
+                          editing={isEditingParts}
+                          dataIndex="partName"
+                          partRecord={partRecord}
+                          productKey={record.key}
+                          inputType="text"
+                        />
+                      ),
                     },
                     {
                       title: (
@@ -1215,20 +1288,16 @@ export default function ProductivityCalculatorPage() {
                       key: 'printTime',
                       width: 150,
                       align: 'center',
-                      render: (value, partRecord) => {
-                        if (isEditingParts) {
-                          return (
-                            <InputNumber
-                              value={value !== null && value !== undefined ? value : undefined}
-                              onChange={(val) => handlePartChange(record.key, partRecord.key, 'printTime', val)}
-                              min={0}
-                              placeholder="—"
-                              style={{ width: '100%' }}
-                            />
-                          );
-                        }
-                        return <span>{value !== null && value !== undefined ? value : <span style={{ color: '#999' }}>—</span>}</span>;
-                      },
+                      render: (value, partRecord) => (
+                        <EditablePartCell
+                          editing={isEditingParts}
+                          dataIndex="printTime"
+                          partRecord={partRecord}
+                          productKey={record.key}
+                          inputType="number"
+                          min={0}
+                        />
+                      ),
                     },
                     {
                       title: (
@@ -1240,20 +1309,16 @@ export default function ProductivityCalculatorPage() {
                       key: 'stackSize',
                       width: 150,
                       align: 'center',
-                      render: (value, partRecord) => {
-                        if (isEditingParts) {
-                          return (
-                            <InputNumber
-                              value={value !== null && value !== undefined ? value : undefined}
-                              onChange={(val) => handlePartChange(record.key, partRecord.key, 'stackSize', val)}
-                              min={1}
-                              placeholder="—"
-                              style={{ width: '100%' }}
-                            />
-                          );
-                        }
-                        return <span>{value !== null && value !== undefined ? value : <span style={{ color: '#999' }}>—</span>}</span>;
-                      },
+                      render: (value, partRecord) => (
+                        <EditablePartCell
+                          editing={isEditingParts}
+                          dataIndex="stackSize"
+                          partRecord={partRecord}
+                          productKey={record.key}
+                          inputType="number"
+                          min={1}
+                        />
+                      ),
                     },
                     {
                       title: (
@@ -1265,22 +1330,18 @@ export default function ProductivityCalculatorPage() {
                       key: 'costMaterial',
                       width: 180,
                       align: 'center',
-                      render: (value, partRecord) => {
-                        if (isEditingParts) {
-                          return (
-                            <InputNumber
-                              value={value !== null && value !== undefined ? value : undefined}
-                              onChange={(val) => handlePartChange(record.key, partRecord.key, 'costMaterial', val)}
-                              min={0}
-                              step={0.01}
-                              precision={2}
-                              placeholder="—"
-                              style={{ width: '100%' }}
-                            />
-                          );
-                        }
-                        return <span>{value !== null && value !== undefined ? parseFloat(value).toFixed(2) : <span style={{ color: '#999' }}>—</span>}</span>;
-                      },
+                      render: (value, partRecord) => (
+                        <EditablePartCell
+                          editing={isEditingParts}
+                          dataIndex="costMaterial"
+                          partRecord={partRecord}
+                          productKey={record.key}
+                          inputType="decimal"
+                          min={0}
+                          step={0.01}
+                          precision={2}
+                        />
+                      ),
                     },
                     {
                       title: (
