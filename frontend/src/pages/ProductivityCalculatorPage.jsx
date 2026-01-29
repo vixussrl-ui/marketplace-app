@@ -20,8 +20,6 @@ export default function ProductivityCalculatorPage() {
     electricityCost: 1.11
   });
   const [emagRomaniaCredential, setEmagRomaniaCredential] = useState(null);
-  const [emagBulgariaCredential, setEmagBulgariaCredential] = useState(null);
-  const [emagUngariaCredential, setEmagUngariaCredential] = useState(null);
 
   // Load products from localStorage on mount
   useEffect(() => {
@@ -98,31 +96,8 @@ export default function ProductivityCalculatorPage() {
                  !label.includes('EMAG.BG');
         });
         
-        // Find eMAG Bulgaria
-        const emagBulgaria = emagCreds.find(c => {
-          const label = (c.account_label || '').toUpperCase();
-          return label.includes('BG') || 
-                 label.includes('BULGARIA') ||
-                 label.includes('EMAG.BG');
-        });
-        
-        // Find eMAG Ungaria
-        const emagUngaria = emagCreds.find(c => {
-          const label = (c.account_label || '').toUpperCase();
-          return label.includes('HU') || 
-                 label.includes('HUNGARY') ||
-                 label.includes('UNGARIA') ||
-                 label.includes('EMAG.HU');
-        });
-        
         if (emagRomania) {
           setEmagRomaniaCredential(emagRomania.id);
-        }
-        if (emagBulgaria) {
-          setEmagBulgariaCredential(emagBulgaria.id);
-        }
-        if (emagUngaria) {
-          setEmagUngariaCredential(emagUngaria.id);
         }
       } catch (error) {
         console.error('Failed to load eMAG credentials:', error);
@@ -191,57 +166,36 @@ export default function ProductivityCalculatorPage() {
       targetPerHour: 22, // 🎯 Target lei/oră (valoare fixă, editabilă)
       commissionEmag: 10,
       pretEmag: 0, // Prețul real din eMAG România (hardcoded, editabil)
-      pretEmagBulgaria: 0, // Prețul real din eMAG Bulgaria (hardcoded, editabil)
-      pretEmagUngaria: 0, // Prețul real din eMAG Ungaria (hardcoded, editabil)
     };
     setProducts(prev => [...prev, newProduct]);
     setEditingKey(newProduct.key);
   }, []);
 
-  const fetchEmagPrice = useCallback(async (record, country = 'romania') => {
+  const fetchEmagPrice = useCallback(async (record) => {
     if (!record.sku) {
       message.warning('Please enter SKU first');
       return;
     }
-    
-    let credential = null;
-    let fieldName = '';
-    let countryName = '';
-    
-    if (country === 'romania') {
-      credential = emagRomaniaCredential;
-      fieldName = 'pretEmag';
-      countryName = 'România';
-    } else if (country === 'bulgaria') {
-      credential = emagBulgariaCredential;
-      fieldName = 'pretEmagBulgaria';
-      countryName = 'Bulgaria';
-    } else if (country === 'ungaria') {
-      credential = emagUngariaCredential;
-      fieldName = 'pretEmagUngaria';
-      countryName = 'Ungaria';
-    }
-    
-    if (!credential) {
-      message.warning(`eMAG ${countryName} credential not found. Please add one in Settings.`);
+    if (!emagRomaniaCredential) {
+      message.warning('eMAG România credential not found. Please add one in Settings.');
       return;
     }
     
     try {
-      message.loading({ content: `Fetching price from eMAG ${countryName}...`, key: `fetchPrice${country}` });
-      const response = await emagAPI.getProductPrice(record.sku, credential);
+      message.loading({ content: 'Fetching price from eMAG România...', key: 'fetchPrice' });
+      const response = await emagAPI.getProductPrice(record.sku, emagRomaniaCredential);
       const price = response.data.price;
       
-      handleCellChange(record.key, fieldName, price);
-      message.success({ content: `Price fetched: ${price} RON`, key: `fetchPrice${country}` });
+      handleCellChange(record.key, 'pretEmag', price);
+      message.success({ content: `Price fetched: ${price} RON`, key: 'fetchPrice' });
     } catch (error) {
-      console.error(`Failed to fetch eMAG ${countryName} price:`, error);
+      console.error('Failed to fetch eMAG price:', error);
       message.error({ 
-        content: error.response?.data?.detail || `Failed to fetch price from eMAG ${countryName}`, 
-        key: `fetchPrice${country}` 
+        content: error.response?.data?.detail || 'Failed to fetch price from eMAG România', 
+        key: 'fetchPrice' 
       });
     }
-  }, [emagRomaniaCredential, emagBulgariaCredential, emagUngariaCredential]);
+  }, [emagRomaniaCredential]);
 
   const deleteRow = useCallback((key) => {
     setProducts(prev => prev.filter(item => item.key !== key));
@@ -387,52 +341,8 @@ export default function ProductivityCalculatorPage() {
             type="link"
             size="small"
             icon={<CloudDownloadOutlined />}
-            onClick={() => fetchEmagPrice(record, 'romania')}
+            onClick={() => fetchEmagPrice(record)}
             title="Fetch price from eMAG România"
-            style={{ padding: 0, height: 'auto' }}
-          />
-        </Space>
-      ),
-    },
-    {
-      title: 'pret emag bulgaria',
-      dataIndex: 'pretEmagBulgaria',
-      key: 'pretEmagBulgaria',
-      width: 200,
-      editable: true,
-      inputType: 'decimal',
-      align: 'right',
-      render: (value, record) => (
-        <Space>
-          <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>
-          <Button
-            type="link"
-            size="small"
-            icon={<CloudDownloadOutlined />}
-            onClick={() => fetchEmagPrice(record, 'bulgaria')}
-            title="Fetch price from eMAG Bulgaria"
-            style={{ padding: 0, height: 'auto' }}
-          />
-        </Space>
-      ),
-    },
-    {
-      title: 'pret emag ungaria',
-      dataIndex: 'pretEmagUngaria',
-      key: 'pretEmagUngaria',
-      width: 200,
-      editable: true,
-      inputType: 'decimal',
-      align: 'right',
-      render: (value, record) => (
-        <Space>
-          <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>
-          <Button
-            type="link"
-            size="small"
-            icon={<CloudDownloadOutlined />}
-            onClick={() => fetchEmagPrice(record, 'ungaria')}
-            title="Fetch price from eMAG Ungaria"
             style={{ padding: 0, height: 'auto' }}
           />
         </Space>
