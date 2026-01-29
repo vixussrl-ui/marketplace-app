@@ -33,6 +33,8 @@ export default function ProductivityCalculatorPage() {
   const [expandedRows, setExpandedRows] = useState([]);
   const [editingParts, setEditingParts] = useState({}); // { productKey: true/false }
   const [initialProductValues, setInitialProductValues] = useState({}); // { productKey: {...original values} }
+  const [marketplaceSettings, setMarketplaceSettings] = useState([]); // Store marketplace settings to preserve them
+  const [manualProducts, setManualProducts] = useState([]); // Store manual products to preserve them
 
   // Load products and settings from server on mount
   useEffect(() => {
@@ -48,6 +50,14 @@ export default function ProductivityCalculatorPage() {
         
         if (data.electricity_settings) {
           setElectricitySettings(data.electricity_settings);
+        }
+        
+        // Preserve marketplace settings and manual products
+        if (data.marketplace_settings) {
+          setMarketplaceSettings(data.marketplace_settings);
+        }
+        if (data.manual_products) {
+          setManualProducts(data.manual_products);
         }
       } catch (error) {
         console.error('Failed to load calculator data:', error);
@@ -120,7 +130,13 @@ export default function ProductivityCalculatorPage() {
     if (!loading && products.length >= 0) {
       const timeoutId = setTimeout(async () => {
         try {
-          await calculatorAPI.saveProducts(products, electricitySettings);
+          // Preserve marketplace_settings and manual_products when saving
+          await calculatorAPI.saveProducts(
+            products, 
+            electricitySettings,
+            marketplaceSettings,
+            manualProducts
+          );
         } catch (error) {
           console.error('Failed to save products to server:', error);
           message.error('Failed to save products. Please try again.');
@@ -129,7 +145,7 @@ export default function ProductivityCalculatorPage() {
       
       return () => clearTimeout(timeoutId);
     }
-  }, [products, electricitySettings, loading]);
+  }, [products, electricitySettings, marketplaceSettings, manualProducts, loading]);
 
   const calculateRow = useCallback((record) => {
     const {

@@ -79,10 +79,21 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             products TEXT NOT NULL,
             electricity_settings TEXT,
+            marketplace_settings TEXT,
+            manual_products TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
         """
     )
+    # Add new columns if they don't exist (for existing databases)
+    try:
+        conn.execute("ALTER TABLE calculator_products ADD COLUMN marketplace_settings TEXT")
+    except:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE calculator_products ADD COLUMN manual_products TEXT")
+    except:
+        pass  # Column already exists
     conn.commit()
 
 
@@ -1132,7 +1143,9 @@ async def get_calculator_products(request: Request):
             "electricity_settings": {
                 "printerConsumption": 0.12,
                 "electricityCost": 1.11
-            }
+            },
+            "marketplace_settings": [],
+            "manual_products": []
         }
     
     row_dict = row_to_dict(row)
@@ -1141,10 +1154,14 @@ async def get_calculator_products(request: Request):
         "printerConsumption": 0.12,
         "electricityCost": 1.11
     }
+    marketplace_settings = json.loads(row_dict.get("marketplace_settings", "[]")) if row_dict.get("marketplace_settings") else []
+    manual_products = json.loads(row_dict.get("manual_products", "[]")) if row_dict.get("manual_products") else []
     
     return {
         "products": products,
-        "electricity_settings": electricity_settings
+        "electricity_settings": electricity_settings,
+        "marketplace_settings": marketplace_settings,
+        "manual_products": manual_products
     }
 
 
@@ -1154,20 +1171,26 @@ async def save_calculator_products(request: Request, data: dict):
     user = get_current_user(request)
     products = data.get("products", [])
     electricity_settings = data.get("electricity_settings", {})
+    marketplace_settings = data.get("marketplace_settings", [])
+    manual_products = data.get("manual_products", [])
     
     products_json = json.dumps(products)
     electricity_settings_json = json.dumps(electricity_settings)
+    marketplace_settings_json = json.dumps(marketplace_settings)
+    manual_products_json = json.dumps(manual_products)
     
     try:
         conn.execute(
             """
-            INSERT INTO calculator_products (user_id, products, electricity_settings)
-            VALUES (?, ?, ?)
+            INSERT INTO calculator_products (user_id, products, electricity_settings, marketplace_settings, manual_products)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 products = excluded.products,
-                electricity_settings = excluded.electricity_settings
+                electricity_settings = excluded.electricity_settings,
+                marketplace_settings = excluded.marketplace_settings,
+                manual_products = excluded.manual_products
             """,
-            (user["id"], products_json, electricity_settings_json)
+            (user["id"], products_json, electricity_settings_json, marketplace_settings_json, manual_products_json)
         )
         conn.commit()
         

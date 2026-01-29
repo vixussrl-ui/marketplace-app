@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Table, InputNumber, Typography, Space, message, Spin } from 'antd';
+import { Card, Table, InputNumber, Typography, Space, message, Spin, Button, Modal, Form, Input, Popconfirm } from 'antd';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
 import { calculatorAPI } from '../api';
@@ -91,14 +92,26 @@ const calculateBestPrice = (record, electricitySettings) => {
 };
 
 export default function MarketplacePriceSetPage() {
-  const [products, setProducts] = useState([]);
+  const [calculatorProducts, setCalculatorProducts] = useState([]); // Products from calculator
+  const [manualProducts, setManualProducts] = useState([]); // Manual products
   const [electricitySettings, setElectricitySettings] = useState({
     printerConsumption: 0.12,
     electricityCost: 1.11,
     targetPrintRate: 22.00
   });
   const [loading, setLoading] = useState(true);
-  const [marketplaceSettings, setMarketplaceSettings] = useState({}); // { productKey: { commission: %, transportCost: RON } }
+  const [marketplaces, setMarketplaces] = useState([]); // [{ id, name, commission, transportCost }]
+  const [addMarketplaceModalVisible, setAddMarketplaceModalVisible] = useState(false);
+  const [addProductModalVisible, setAddProductModalVisible] = useState(false);
+  const [marketplaceForm] = Form.useForm();
+  const [productForm] = Form.useForm();
+
+  // Combine calculator products and manual products for display
+  const products = useMemo(() => {
+    const calcProducts = (calculatorProducts || []).map(p => ({ ...p, isManual: false }));
+    const manual = (manualProducts || []).map(p => ({ ...p, isManual: true }));
+    return [...calcProducts, ...manual];
+  }, [calculatorProducts, manualProducts]);
 
   // Load products and settings from server on mount
   useEffect(() => {
@@ -109,7 +122,15 @@ export default function MarketplacePriceSetPage() {
         const data = response.data;
         
         if (data.products && data.products.length > 0) {
-          setProducts(data.products);
+          setCalculatorProducts(data.products);
+        }
+        
+        if (data.manual_products && data.manual_products.length > 0) {
+          setManualProducts(data.manual_products);
+        }
+        
+        if (data.marketplace_settings && data.marketplace_settings.length > 0) {
+          setMarketplaces(data.marketplace_settings);
         }
         
         if (data.electricity_settings) {
@@ -126,134 +147,246 @@ export default function MarketplacePriceSetPage() {
     loadCalculatorData();
   }, []);
 
-  const handleMarketplaceSettingChange = useCallback((productKey, field, value) => {
-    setMarketplaceSettings(prev => ({
-      ...prev,
-      [productKey]: {
-        ...prev[productKey],
-        [field]: value !== null && value !== undefined ? value : 0
-      }
-    }));
-  }, []);
+  // Save marketplace settings and manual products to server whenever they change (debounced)
+  useEffect(() => {
+    if (!loading) {
+      const timeoutId = setTimeout(async () => {
+        try {
+          await calculatorAPI.saveProducts(
+            calculatorProducts, 
+            electricitySettings,
+            marketplaces,
+            manualProducts
+          );
+        } catch (error) {
+          console.error('Failed to save marketplace data to server:', error);
+          message.error('Failed to save marketplace settings. Please try again.');
+        }
+      }, 1000); // Debounce: save 1 second after last change
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [marketplaces, manualProducts, calculatorProducts, electricitySettings, loading]);
 
-  const calculateFinalPrice = useCallback((record) => {
-    const bestPrice = calculateBestPrice(record, electricitySettings);
-    const settings = marketplaceSettings[record.key] || {};
-    const commission = settings.commission || 0;
-    const transportCost = settings.transportCost || 0;
-
+  // Calculate price for a product on a specific marketplace
+  const calculateMarketplacePrice = useCallback((record, marketplace) => {
+    // For manual products, use the manualBestPrice if available
+    const bestPrice = record.manualBestPrice !== null && record.manualBestPrice !== undefined 
+      ? record.manualBestPrice 
+      : calculateBestPrice(record, electricitySettings);
+    
     if (bestPrice === 0) {
       return 0;
     }
 
-    // Formula: preț_final = (Best Price + cost_transport) / (1 - comision_marketplace / 100)
-    const commissionDecimal = commission / 100;
-    if (commissionDecimal >= 1) {
-      return 0; // Invalid commission
-    }
+    const commission = marketplace.commission || 0;
+    const transportCost = marketplace.transportCost || 0;
 
-    const finalPrice = (bestPrice + transportCost) / (1 - commissionDecimal);
+    // Formula: preț_final = Best Price + (Best Price * commission / 100) + transportCost
+    // Sau: preț_final = Best Price + comision + transport
+    const commissionAmount = bestPrice * (commission / 100);
+    const finalPrice = bestPrice + commissionAmount + transportCost;
+    
     return finalPrice;
-  }, [electricitySettings, marketplaceSettings]);
+  }, [electricitySettings]);
 
-  const columns = useMemo(() => [
-    {
-      title: 'Product Name',
-      dataIndex: 'productName',
-      key: 'productName',
-      width: 300,
-      render: (text, record) => {
-        const productName = text || '';
-        const sku = record.sku || '';
-        if (!productName && !sku) {
-          return <span style={{ color: '#999' }}>—</span>;
-        }
-        return (
-          <span>
-            {productName}
-            {sku && (
-              <span style={{ color: '#999', marginLeft: '8px', fontSize: '14px' }}>
-                ({sku})
-              </span>
-            )}
-          </span>
-        );
+  // Add new marketplace
+  const handleAddMarketplace = useCallback(async () => {
+    try {
+      const values = await marketplaceForm.validateFields();
+      const newMarketplace = {
+        id: Date.now().toString(),
+        name: values.name,
+        commission: values.commission || 0,
+        transportCost: values.transportCost || 0
+      };
+      setMarketplaces(prev => [...prev, newMarketplace]);
+      setAddMarketplaceModalVisible(false);
+      marketplaceForm.resetFields();
+      message.success('Marketplace added successfully');
+    } catch (error) {
+      console.error('Validation failed:', error);
+    }
+  }, [marketplaceForm]);
+
+  // Remove marketplace
+  const handleRemoveMarketplace = useCallback((marketplaceId) => {
+    setMarketplaces(prev => prev.filter(m => m.id !== marketplaceId));
+    message.success('Marketplace removed');
+  }, []);
+
+  // Add new manual product
+  const handleAddProduct = useCallback(async () => {
+    try {
+      const values = await productForm.validateFields();
+      const newProduct = {
+        key: Date.now().toString(),
+        productName: values.productName || '',
+        sku: values.sku || '',
+        manualBestPrice: values.manualBestPrice || 0
+      };
+      setManualProducts(prev => [...prev, newProduct]);
+      setAddProductModalVisible(false);
+      productForm.resetFields();
+      message.success('Product added successfully');
+    } catch (error) {
+      console.error('Validation failed:', error);
+    }
+  }, [productForm]);
+
+  // Remove product
+  const handleRemoveProduct = useCallback((productKey) => {
+    setManualProducts(prev => prev.filter(p => p.key !== productKey));
+    message.success('Product removed');
+  }, []);
+
+  // Build columns dynamically based on marketplaces
+  const columns = useMemo(() => {
+    const baseColumns = [
+      {
+        title: 'Product Name',
+        dataIndex: 'productName',
+        key: 'productName',
+        width: 300,
+        fixed: 'left',
+        render: (text, record) => {
+          const productName = text || '';
+          const sku = record.sku || '';
+          if (!productName && !sku) {
+            return <span style={{ color: '#999' }}>—</span>;
+          }
+          return (
+            <span>
+              {productName}
+              {sku && (
+                <span style={{ color: '#999', marginLeft: '8px', fontSize: '14px' }}>
+                  ({sku})
+                </span>
+              )}
+              {record.isManual && (
+                <span style={{ color: theme.COLORS.primary, marginLeft: '8px', fontSize: '12px', fontStyle: 'italic' }}>
+                  (manual)
+                </span>
+              )}
+            </span>
+          );
+        },
       },
-    },
-    {
-      title: 'Best Price (RON)',
-      key: 'bestPrice',
-      width: 180,
-      align: 'center',
-      render: (_, record) => {
-        const bestPrice = calculateBestPrice(record, electricitySettings);
-        return (
-          <strong style={{ color: theme.COLORS.text.muted || '#64748b', fontSize: '16px' }}>
-            {formatNumber(bestPrice, 2)}
-          </strong>
-        );
+      {
+        title: 'Best Price (RON)',
+        key: 'bestPrice',
+        width: 180,
+        align: 'center',
+        render: (_, record) => {
+          const bestPrice = record.manualBestPrice !== null && record.manualBestPrice !== undefined 
+            ? record.manualBestPrice 
+            : calculateBestPrice(record, electricitySettings);
+          return (
+            <strong style={{ color: theme.COLORS.text.muted || '#64748b', fontSize: '16px' }}>
+              {formatNumber(bestPrice, 2)}
+            </strong>
+          );
+        },
       },
-    },
-    {
-      title: 'Marketplace Commission (%)',
-      key: 'commission',
-      width: 250,
-      align: 'center',
-      render: (_, record) => {
-        const settings = marketplaceSettings[record.key] || {};
-        return (
-          <InputNumber
-            min={0}
-            max={99.99}
-            step={0.1}
-            precision={2}
-            value={settings.commission}
-            onChange={(value) => handleMarketplaceSettingChange(record.key, 'commission', value)}
-            placeholder="0.00"
-            style={{ width: '100%' }}
-          />
-        );
-      },
-    },
-    {
-      title: 'Transport Cost (RON)',
-      key: 'transportCost',
+    ];
+
+    // Add dynamic columns for each marketplace
+    const marketplaceColumns = marketplaces.map(marketplace => ({
+      title: (
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          position: 'relative',
+          width: '100%',
+          paddingRight: '32px' // Spațiu pentru buton
+        }}>
+          <span style={{ textAlign: 'center', flex: 1 }}>{marketplace.name}</span>
+          <Popconfirm
+            title={`Delete marketplace "${marketplace.name}"?`}
+            onConfirm={() => handleRemoveMarketplace(marketplace.id)}
+            okText="Yes"
+            cancelText="No"
+          >
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+              style={{ 
+                position: 'absolute',
+                right: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                padding: '0',
+                minWidth: 'auto',
+                width: '24px',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            />
+          </Popconfirm>
+        </div>
+      ),
+      key: `marketplace-${marketplace.id}`,
       width: 200,
       align: 'center',
       render: (_, record) => {
-        const settings = marketplaceSettings[record.key] || {};
+        const price = calculateMarketplacePrice(record, marketplace);
         return (
-          <InputNumber
-            min={0}
-            step={0.01}
-            precision={2}
-            value={settings.transportCost}
-            onChange={(value) => handleMarketplaceSettingChange(record.key, 'transportCost', value)}
-            placeholder="0.00"
-            style={{ width: '100%' }}
-          />
-        );
-      },
-    },
-    {
-      title: 'Final Price (RON)',
-      key: 'finalPrice',
-      width: 200,
-      align: 'center',
-      render: (_, record) => {
-        const finalPrice = calculateFinalPrice(record);
-        return (
-          <strong style={{ 
-            color: theme.COLORS.primary || '#1890ff', 
-            fontSize: '18px',
-            fontWeight: 600
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            width: '100%'
           }}>
-            {formatNumber(finalPrice, 2)}
-          </strong>
+            <strong style={{ 
+              color: theme.COLORS.primary || '#1890ff', 
+              fontSize: '16px',
+              fontWeight: 600
+            }}>
+              {formatNumber(price, 2)}
+            </strong>
+          </div>
         );
       },
-    },
-  ], [electricitySettings, marketplaceSettings, handleMarketplaceSettingChange, calculateFinalPrice]);
+    }));
+
+    // Add actions column
+    const actionsColumn = {
+      title: 'Actions',
+      key: 'actions',
+      width: 100,
+      fixed: 'right',
+      render: (_, record) => {
+        // Only allow deletion of manual products
+        if (record.isManual) {
+          return (
+            <Popconfirm
+              title="Delete this product?"
+              onConfirm={() => handleRemoveProduct(record.key)}
+              okText="Yes"
+              cancelText="No"
+            >
+              <Button
+                type="link"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+              >
+                Delete
+              </Button>
+            </Popconfirm>
+          );
+        }
+        return null;
+      },
+    };
+
+    return [...baseColumns, ...marketplaceColumns, actionsColumn];
+  }, [marketplaces, electricitySettings, calculateMarketplacePrice, handleRemoveMarketplace, handleRemoveProduct]);
 
   return (
     <MainLayout currentKey="marketplace-price-set">
@@ -305,10 +438,37 @@ export default function MarketplacePriceSetPage() {
               padding: `${theme.SPACING.lg * 1.5}px`
             }
           }}
+          extra={
+            <Space>
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => setAddProductModalVisible(true)}
+                style={{
+                  fontSize: '15px',
+                  padding: '6px 16px',
+                  height: 'auto'
+                }}
+              >
+                Add Product
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setAddMarketplaceModalVisible(true)}
+                style={{
+                  fontSize: '15px',
+                  padding: '6px 16px',
+                  height: 'auto'
+                }}
+              >
+                Add Marketplace
+              </Button>
+            </Space>
+          }
         >
           <div style={{ marginBottom: '16px', padding: '12px', background: theme.COLORS.primaryLight, borderRadius: theme.RADIUS.md }}>
             <Text type="secondary" style={{ fontSize: '14px' }}>
-              <strong>Formula:</strong> Final Price = (Best Price + Transport Cost) / (1 - Marketplace Commission / 100)
+              <strong>Formula:</strong> Marketplace Price = Best Price + (Best Price × Commission %) + Transport Cost
             </Text>
           </div>
 
@@ -323,6 +483,7 @@ export default function MarketplacePriceSetPage() {
               style={theme.TABLE_CONFIG.tableStyle}
               rowClassName={() => theme.TABLE_CONFIG.rowClassName}
               size="small"
+              scroll={{ x: 'max-content' }}
             />
           </Spin>
           {products.length === 0 && !loading && (
@@ -332,10 +493,119 @@ export default function MarketplacePriceSetPage() {
               color: theme.COLORS.text.muted,
               fontSize: '16px'
             }}>
-              No products found. Please add products in the Print costs first.
+              No products found. Add products from Print costs or add them manually.
             </div>
           )}
         </Card>
+
+        {/* Add Marketplace Modal */}
+        <Modal
+          title="Add Marketplace"
+          open={addMarketplaceModalVisible}
+          onCancel={() => {
+            setAddMarketplaceModalVisible(false);
+            marketplaceForm.resetFields();
+          }}
+          onOk={handleAddMarketplace}
+          okText="Add Marketplace"
+          cancelText="Cancel"
+          width={500}
+        >
+          <Form
+            form={marketplaceForm}
+            layout="vertical"
+          >
+            <Form.Item
+              name="name"
+              label="Marketplace Name"
+              rules={[{ required: true, message: 'Please enter marketplace name' }]}
+            >
+              <Input placeholder="e.g., eMAG, Amazon, etc." />
+            </Form.Item>
+            <Form.Item
+              name="commission"
+              label="Commission (%)"
+              rules={[
+                { required: true, message: 'Please enter commission percentage' },
+                { type: 'number', min: 0, max: 99.99, message: 'Commission must be between 0 and 99.99%' }
+              ]}
+            >
+              <InputNumber
+                min={0}
+                max={99.99}
+                step={0.1}
+                precision={2}
+                placeholder="0.00"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="transportCost"
+              label="Transport Cost (RON)"
+              rules={[
+                { required: true, message: 'Please enter transport cost' },
+                { type: 'number', min: 0, message: 'Transport cost must be positive' }
+              ]}
+            >
+              <InputNumber
+                min={0}
+                step={0.01}
+                precision={2}
+                placeholder="0.00"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        {/* Add Product Modal */}
+        <Modal
+          title="Add Manual Product"
+          open={addProductModalVisible}
+          onCancel={() => {
+            setAddProductModalVisible(false);
+            productForm.resetFields();
+          }}
+          onOk={handleAddProduct}
+          okText="Add Product"
+          cancelText="Cancel"
+          width={500}
+        >
+          <Form
+            form={productForm}
+            layout="vertical"
+          >
+            <Form.Item
+              name="productName"
+              label="Product Name"
+              rules={[{ required: true, message: 'Please enter product name' }]}
+            >
+              <Input placeholder="Enter product name" />
+            </Form.Item>
+            <Form.Item
+              name="sku"
+              label="SKU (optional)"
+            >
+              <Input placeholder="Enter SKU" />
+            </Form.Item>
+            <Form.Item
+              name="manualBestPrice"
+              label="Best Price (RON)"
+              rules={[
+                { required: true, message: 'Please enter best price' },
+                { type: 'number', min: 0, message: 'Best price must be positive' }
+              ]}
+            >
+              <InputNumber
+                min={0}
+                step={0.01}
+                precision={2}
+                placeholder="0.00"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
       </div>
     </MainLayout>
   );

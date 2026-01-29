@@ -49,5 +49,10 @@ export const emagAPI = {
 
 export const calculatorAPI = {
   getProducts: () => api.get('/calculator/products'),
-  saveProducts: (products, electricitySettings) => api.put('/calculator/products', { products, electricity_settings: electricitySettings }),
+  saveProducts: (products, electricitySettings, marketplaceSettings, manualProducts) => api.put('/calculator/products', { 
+    products, 
+    electricity_settings: electricitySettings,
+    marketplace_settings: marketplaceSettings || [],
+    manual_products: manualProducts || []
+  }),
 };
