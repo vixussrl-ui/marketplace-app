@@ -255,7 +255,8 @@ class EMAGClient:
             
             # Conform documentației eMAG, folosim product_offer/read cu filtru part_number
             # URL: MARKETPLACE_API_URL/product_offer/read
-            offer_url = f"{self.api_url}/product_offer/read"
+            # Folosim base_url, nu api_url (care este pentru order/read)
+            offer_url = f"{self.base_url}/product_offer/read"
             
             # Payload conform documentației: filtru part_number
             payload = {

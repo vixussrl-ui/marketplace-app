@@ -41,22 +41,18 @@ export default function ProductivityCalculatorPage() {
       try {
         const parsed = JSON.parse(saved);
         setElectricitySettings(parsed);
-        // Set form values only if form is mounted
-        if (electricityForm) {
-          electricityForm.setFieldsValue(parsed);
-        }
       } catch (e) {
         console.error('Failed to load electricity settings:', e);
-        if (electricityForm) {
-          electricityForm.setFieldsValue(electricitySettings);
-        }
-      }
-    } else {
-      if (electricityForm) {
-        electricityForm.setFieldsValue(electricitySettings);
       }
     }
   }, []);
+
+  // Set form values after form is mounted and settings are loaded
+  useEffect(() => {
+    if (electricitySettings && electricityForm) {
+      electricityForm.setFieldsValue(electricitySettings);
+    }
+  }, [electricitySettings, electricityForm]);
 
   // Load eMAG credentials automatically on mount (România, Bulgaria, Ungaria)
   useEffect(() => {
