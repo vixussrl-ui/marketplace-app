@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Table, InputNumber, Typography, Space, message, Spin, Button, Modal, Form, Input, Popconfirm } from 'antd';
+import { Card, Table, InputNumber, Typography, Space, message, Spin, Button, Modal, Form, Input, Popconfirm, Select } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
@@ -100,7 +100,7 @@ export default function MarketplacePriceSetPage() {
     targetPrintRate: 22.00
   });
   const [loading, setLoading] = useState(true);
-  const [marketplaces, setMarketplaces] = useState([]); // [{ id, name, commission, transportCost }]
+  const [marketplaces, setMarketplaces] = useState([]); // [{ id, name, commission, transportCost, displayCurrency }]
   const [addMarketplaceModalVisible, setAddMarketplaceModalVisible] = useState(false);
   const [addProductModalVisible, setAddProductModalVisible] = useState(false);
   const [editMarketplaceModalVisible, setEditMarketplaceModalVisible] = useState(false);
@@ -109,6 +109,22 @@ export default function MarketplacePriceSetPage() {
   const [marketplaceForm] = Form.useForm();
   const [productForm] = Form.useForm();
   const [editMarketplaceForm] = Form.useForm();
+
+  // Exchange rates (RON as base currency)
+  const exchangeRates = {
+    RON: 1,
+    HUF: 50, // 1 RON = 50 HUF (approximate)
+    EUR: 0.2 // 1 RON = 0.2 EUR (approximate, 1 EUR = 5 RON)
+  };
+  
+  // Convert price from RON to target currency
+  const convertCurrency = useCallback((priceInRON, targetCurrency) => {
+    if (!targetCurrency || targetCurrency === 'RON') {
+      return priceInRON;
+    }
+    const rate = exchangeRates[targetCurrency] || 1;
+    return priceInRON * rate;
+  }, []);
 
   // Combine calculator products and manual products for display
   const products = useMemo(() => {
@@ -189,10 +205,12 @@ export default function MarketplacePriceSetPage() {
     // Formula: preț_final = Best Price + (Best Price * commission / 100) + transportCost
     // Sau: preț_final = Best Price + comision + transport
     const commissionAmount = bestPrice * (commission / 100);
-    const finalPrice = bestPrice + commissionAmount + transportCost;
+    const finalPriceInRON = bestPrice + commissionAmount + transportCost;
     
-    return finalPrice;
-  }, [electricitySettings]);
+    // Convert to display currency if specified
+    const displayCurrency = marketplace.displayCurrency || 'RON';
+    return convertCurrency(finalPriceInRON, displayCurrency);
+  }, [electricitySettings, convertCurrency]);
 
   // Add new marketplace
   const handleAddMarketplace = useCallback(async () => {
@@ -202,7 +220,8 @@ export default function MarketplacePriceSetPage() {
         id: Date.now().toString(),
         name: values.name,
         commission: values.commission || 0,
-        transportCost: values.transportCost || 0
+        transportCost: values.transportCost || 0,
+        displayCurrency: values.displayCurrency || 'RON'
       };
       setMarketplaces(prev => [...prev, newMarketplace]);
       setAddMarketplaceModalVisible(false);
@@ -227,7 +246,8 @@ export default function MarketplacePriceSetPage() {
       editMarketplaceForm.setFieldsValue({
         name: marketplace.name,
         commission: marketplace.commission,
-        transportCost: marketplace.transportCost
+        transportCost: marketplace.transportCost,
+        displayCurrency: marketplace.displayCurrency || 'RON'
       });
       setEditMarketplaceModalVisible(true);
     }
@@ -243,7 +263,8 @@ export default function MarketplacePriceSetPage() {
             ...m,
             name: values.name,
             commission: values.commission || 0,
-            transportCost: values.transportCost || 0
+            transportCost: values.transportCost || 0,
+            displayCurrency: values.displayCurrency || 'RON'
           };
         }
         return m;
@@ -382,21 +403,46 @@ export default function MarketplacePriceSetPage() {
       minWidth: 150,
       align: 'center',
       render: (_, record) => {
+        // Calculate price in display currency
         const price = calculateMarketplacePrice(record, marketplace);
+        const displayCurrency = marketplace.displayCurrency || 'RON';
+        const currencySymbol = displayCurrency === 'HUF' ? 'Ft' : displayCurrency === 'EUR' ? '€' : 'RON';
+        
+        // Calculate price in RON for reference (if not RON)
+        let priceInRON = 0;
+        if (displayCurrency !== 'RON') {
+          const bestPrice = record.manualBestPrice !== null && record.manualBestPrice !== undefined 
+            ? record.manualBestPrice 
+            : calculateBestPrice(record, electricitySettings);
+          if (bestPrice > 0) {
+            const commission = marketplace.commission || 0;
+            const transportCost = marketplace.transportCost || 0;
+            const commissionAmount = bestPrice * (commission / 100);
+            priceInRON = bestPrice + commissionAmount + transportCost;
+          }
+        }
+        
         return (
           <div style={{ 
             display: 'flex', 
             justifyContent: 'center', 
             alignItems: 'center',
-            width: '100%'
+            width: '100%',
+            flexDirection: 'column',
+            gap: '2px'
           }}>
             <strong style={{ 
               color: theme.COLORS.primary || '#1890ff', 
               fontSize: '16px',
               fontWeight: 600
             }}>
-              {formatNumber(price, 2)}
+              {formatNumber(price, 2)} {currencySymbol}
             </strong>
+            {displayCurrency !== 'RON' && priceInRON > 0 && (
+              <span style={{ fontSize: '11px', color: '#999' }}>
+                ({formatNumber(priceInRON, 2)} RON)
+              </span>
+            )}
           </div>
         );
       },
@@ -434,7 +480,7 @@ export default function MarketplacePriceSetPage() {
     };
 
     return [...baseColumns, ...marketplaceColumns, actionsColumn];
-  }, [marketplaces, electricitySettings, calculateMarketplacePrice, handleRemoveMarketplace, handleRemoveProduct, isEditingMarketplaces, handleEditMarketplace]);
+  }, [marketplaces, electricitySettings, calculateMarketplacePrice, calculateBestPrice, handleRemoveMarketplace, handleRemoveProduct, isEditingMarketplaces, handleEditMarketplace]);
 
   return (
     <MainLayout currentKey="marketplace-price-set">
@@ -628,6 +674,21 @@ export default function MarketplacePriceSetPage() {
                 style={{ width: '100%' }}
               />
             </Form.Item>
+            <Form.Item
+              name="displayCurrency"
+              label="Display price in"
+              rules={[{ required: true, message: 'Please select display currency' }]}
+              initialValue="RON"
+            >
+              <Select
+                style={{ width: '100%' }}
+                options={[
+                  { label: 'RON', value: 'RON' },
+                  { label: 'HUF', value: 'HUF' },
+                  { label: 'EUR', value: 'EUR' }
+                ]}
+              />
+            </Form.Item>
           </Form>
         </Modal>
 
@@ -736,6 +797,21 @@ export default function MarketplacePriceSetPage() {
                 precision={2}
                 placeholder="0.00"
                 style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="displayCurrency"
+              label="Display price in"
+              rules={[{ required: true, message: 'Please select display currency' }]}
+              initialValue="RON"
+            >
+              <Select
+                style={{ width: '100%' }}
+                options={[
+                  { label: 'RON', value: 'RON' },
+                  { label: 'HUF', value: 'HUF' },
+                  { label: 'EUR', value: 'EUR' }
+                ]}
               />
             </Form.Item>
           </Form>
