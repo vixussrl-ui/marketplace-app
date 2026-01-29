@@ -19,8 +19,7 @@ export default function ProductivityCalculatorPage() {
     printerConsumption: 0.12,
     electricityCost: 1.11
   });
-  const [emagCredentials, setEmagCredentials] = useState([]);
-  const [selectedEmagCredential, setSelectedEmagCredential] = useState(null);
+  const [emagRomaniaCredential, setEmagRomaniaCredential] = useState(null);
 
   // Load products from localStorage on mount
   useEffect(() => {
@@ -52,9 +51,9 @@ export default function ProductivityCalculatorPage() {
     }
   }, [electricityForm]);
 
-  // Load eMAG credentials on mount
+  // Load eMAG România credential automatically on mount
   useEffect(() => {
-    const loadCredentials = async () => {
+    const loadEmagRomaniaCredential = async () => {
       try {
         const userId = localStorage.getItem('user_id');
         if (!userId) return;
@@ -68,28 +67,36 @@ export default function ProductivityCalculatorPage() {
         // Load credentials
         const response = await credentialsAPI.list(userId);
         const allCredentials = response.data || [];
-        console.log('All credentials:', allCredentials);
-        console.log('eMAG platform ID:', emagPlatformId);
         
-        // Filter by platform_id (numeric) or platform (could be ID or name)
+        // Filter eMAG credentials
         const emagCreds = allCredentials.filter(c => {
           const platformValue = c.platform || c.platform_id;
           return platformValue === emagPlatformId || 
                  platformValue === 'emag' || 
                  platformValue === 'EMAG' ||
-                 platformValue === 1; // Fallback to ID 1
+                 platformValue === 1;
         });
         
-        console.log('Filtered eMAG credentials:', emagCreds);
-        setEmagCredentials(emagCreds);
-        if (emagCreds.length > 0 && !selectedEmagCredential) {
-          setSelectedEmagCredential(emagCreds[0].id);
+        // Find eMAG România (not HU, not BG)
+        const emagRomania = emagCreds.find(c => {
+          const label = (c.account_label || '').toUpperCase();
+          return !label.includes('HU') && 
+                 !label.includes('HUNGARY') && 
+                 !label.includes('UNGARIA') &&
+                 !label.includes('EMAG.HU') &&
+                 !label.includes('BG') &&
+                 !label.includes('BULGARIA') &&
+                 !label.includes('EMAG.BG');
+        });
+        
+        if (emagRomania) {
+          setEmagRomaniaCredential(emagRomania.id);
         }
       } catch (error) {
-        console.error('Failed to load eMAG credentials:', error);
+        console.error('Failed to load eMAG România credential:', error);
       }
     };
-    loadCredentials();
+    loadEmagRomaniaCredential();
   }, []);
 
   // Save products to localStorage whenever they change
@@ -162,14 +169,14 @@ export default function ProductivityCalculatorPage() {
       message.warning('Please enter SKU first');
       return;
     }
-    if (!selectedEmagCredential) {
-      message.warning('Please select an eMAG credential in Settings');
+    if (!emagRomaniaCredential) {
+      message.warning('eMAG România credential not found. Please add one in Settings.');
       return;
     }
     
     try {
-      message.loading({ content: 'Fetching price from eMAG...', key: 'fetchPrice' });
-      const response = await emagAPI.getProductPrice(record.sku, selectedEmagCredential);
+      message.loading({ content: 'Fetching price from eMAG România...', key: 'fetchPrice' });
+      const response = await emagAPI.getProductPrice(record.sku, emagRomaniaCredential);
       const price = response.data.price;
       
       handleCellChange(record.key, 'pretEmag', price);
@@ -177,11 +184,11 @@ export default function ProductivityCalculatorPage() {
     } catch (error) {
       console.error('Failed to fetch eMAG price:', error);
       message.error({ 
-        content: error.response?.data?.detail || 'Failed to fetch price from eMAG', 
+        content: error.response?.data?.detail || 'Failed to fetch price from eMAG România', 
         key: 'fetchPrice' 
       });
     }
-  }, [selectedEmagCredential]);
+  }, [emagRomaniaCredential]);
 
   const deleteRow = useCallback((key) => {
     setProducts(prev => prev.filter(item => item.key !== key));
@@ -313,10 +320,10 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'pret emag',
+      title: 'pret emag romania',
       dataIndex: 'pretEmag',
       key: 'pretEmag',
-      width: 180,
+      width: 200,
       editable: true,
       inputType: 'decimal',
       align: 'right',
@@ -328,7 +335,7 @@ export default function ProductivityCalculatorPage() {
             size="small"
             icon={<CloudDownloadOutlined />}
             onClick={() => fetchEmagPrice(record)}
-            title="Fetch price from eMAG"
+            title="Fetch price from eMAG România"
             style={{ padding: 0, height: 'auto' }}
           />
         </Space>
@@ -465,7 +472,7 @@ export default function ProductivityCalculatorPage() {
         );
       },
     },
-  ], [calculateRow, isEditing, edit, save, cancel, deleteRow, fetchEmagPrice]);
+  ], [calculateRow, isEditing, edit, save, cancel, deleteRow, fetchEmagPrice, handleCellChange]);
   
   const mergedColumns = useMemo(() => {
     return columns.map((col) => {
@@ -625,28 +632,6 @@ export default function ProductivityCalculatorPage() {
             form={electricityForm}
             layout="vertical"
           >
-            <Form.Item
-              label="eMAG Credential (for price fetching)"
-            >
-              <Select
-                value={selectedEmagCredential}
-                onChange={setSelectedEmagCredential}
-                placeholder="Select eMAG credential"
-                style={{ width: '100%' }}
-              >
-                {emagCredentials.map(cred => (
-                  <Select.Option key={cred.id} value={cred.id}>
-                    {cred.account_label || `eMAG ${cred.id}`}
-                  </Select.Option>
-                ))}
-              </Select>
-              {emagCredentials.length === 0 && (
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  No eMAG credentials found. Add one in Settings.
-                </Text>
-              )}
-            </Form.Item>
-
             <Form.Item
               name="printerConsumption"
               label="Consum Imprimantă (kW)"
