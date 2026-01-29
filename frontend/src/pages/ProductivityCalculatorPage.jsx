@@ -747,7 +747,7 @@ export default function ProductivityCalculatorPage() {
         if (record.isMultipleParts) {
           return <strong style={{ color: theme.COLORS.primary }}>{content}</strong>;
         }
-        return content;
+        return <strong style={{ color: theme.COLORS.text?.body || '#1f2937', fontWeight: 600 }}>{content}</strong>;
       },
     },
     {
