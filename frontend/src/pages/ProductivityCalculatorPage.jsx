@@ -470,6 +470,22 @@ export default function ProductivityCalculatorPage() {
     setEditingKey('');
   }, []);
 
+  // Listen for Escape key to cancel editing
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && editingKey) {
+        cancel();
+      }
+    };
+
+    if (editingKey) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [editingKey, cancel]);
+
   const save = useCallback((key) => {
     setEditingKey('');
     setEditingParts(prev => {
