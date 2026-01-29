@@ -341,38 +341,39 @@ export default function MarketplacePriceSetPage() {
           justifyContent: 'center',
           position: 'relative',
           width: '100%',
-          paddingRight: isEditingMarketplaces ? '0' : '32px', // Spațiu pentru buton doar când nu e în edit mode
-          minWidth: '150px'
+          paddingRight: isEditingMarketplaces ? '0' : '0',
+          minWidth: '150px',
+          gap: isEditingMarketplaces ? '8px' : '0'
         }}>
           <span style={{ textAlign: 'center', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{marketplace.name}</span>
-          {!isEditingMarketplaces && (
-            <Popconfirm
-              title={`Delete marketplace "${marketplace.name}"?`}
-              onConfirm={() => handleRemoveMarketplace(marketplace.id)}
-              okText="Yes"
-              cancelText="No"
-            >
+          {isEditingMarketplaces && (
+            <Space size="small" style={{ flexShrink: 0 }}>
               <Button
-                type="text"
-                danger
+                type="link"
                 size="small"
-                icon={<DeleteOutlined />}
-                style={{ 
-                  position: 'absolute',
-                  right: 0,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  padding: '0',
-                  minWidth: 'auto',
-                  width: '24px',
-                  height: '24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              />
-            </Popconfirm>
+                icon={<EditOutlined />}
+                onClick={() => handleEditMarketplace(marketplace.id)}
+                style={{ padding: '0 4px' }}
+              >
+                Edit
+              </Button>
+              <Popconfirm
+                title={`Delete marketplace "${marketplace.name}"?`}
+                onConfirm={() => handleRemoveMarketplace(marketplace.id)}
+                okText="Yes"
+                cancelText="No"
+              >
+                <Button
+                  type="link"
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  style={{ padding: '0 4px' }}
+                >
+                  Delete
+                </Button>
+              </Popconfirm>
+            </Space>
           )}
         </div>
       ),
@@ -387,54 +388,15 @@ export default function MarketplacePriceSetPage() {
             display: 'flex', 
             justifyContent: 'center', 
             alignItems: 'center',
-            width: '100%',
-            flexDirection: 'column',
-            gap: isEditingMarketplaces ? '8px' : '0'
+            width: '100%'
           }}>
-            {!isEditingMarketplaces ? (
-              <strong style={{ 
-                color: theme.COLORS.primary || '#1890ff', 
-                fontSize: '16px',
-                fontWeight: 600
-              }}>
-                {formatNumber(price, 2)}
-              </strong>
-            ) : (
-              <>
-                <strong style={{ 
-                  color: theme.COLORS.primary || '#1890ff', 
-                  fontSize: '16px',
-                  fontWeight: 600
-                }}>
-                  {formatNumber(price, 2)}
-                </strong>
-                <Space size="small">
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => handleEditMarketplace(marketplace.id)}
-                  >
-                    Edit
-                  </Button>
-                  <Popconfirm
-                    title={`Delete marketplace "${marketplace.name}"?`}
-                    onConfirm={() => handleRemoveMarketplace(marketplace.id)}
-                    okText="Yes"
-                    cancelText="No"
-                  >
-                    <Button
-                      type="link"
-                      danger
-                      size="small"
-                      icon={<DeleteOutlined />}
-                    >
-                      Delete
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              </>
-            )}
+            <strong style={{ 
+              color: theme.COLORS.primary || '#1890ff', 
+              fontSize: '16px',
+              fontWeight: 600
+            }}>
+              {formatNumber(price, 2)}
+            </strong>
           </div>
         );
       },
