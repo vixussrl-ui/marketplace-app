@@ -744,9 +744,7 @@ export default function ProductivityCalculatorPage() {
             )}
           </span>
         );
-        if (record.isMultipleParts) {
-          return <strong style={{ color: theme.COLORS.primary }}>{content}</strong>;
-        }
+        // Același stil pentru toate obiectele: bold, culoare consistentă
         return <strong style={{ color: theme.COLORS.text?.body || '#1f2937', fontWeight: 600 }}>{content}</strong>;
       },
     },
@@ -1091,6 +1089,18 @@ export default function ProductivityCalculatorPage() {
           .productivity-table .ant-table-tbody > tr:hover > td {
             background: ${theme.COLORS.primaryLight} !important;
           }
+          .productivity-table .ant-table-tbody > tr.row-bg-light > td {
+            background: #f8f9fa !important;
+          }
+          .productivity-table .ant-table-tbody > tr.row-bg-light:hover > td {
+            background: ${theme.COLORS.primaryLight} !important;
+          }
+          .productivity-table .ant-table-tbody > tr.row-bg-alternate > td {
+            background: #f0f4f8 !important;
+          }
+          .productivity-table .ant-table-tbody > tr.row-bg-alternate:hover > td {
+            background: ${theme.COLORS.primaryLight} !important;
+          }
           .productivity-table .ant-table-wrapper {
             overflow-x: auto;
           }
@@ -1185,7 +1195,12 @@ export default function ProductivityCalculatorPage() {
               pagination={false}
               locale={theme.TABLE_CONFIG.locale}
               style={theme.TABLE_CONFIG.tableStyle}
-              rowClassName={() => theme.TABLE_CONFIG.rowClassName}
+              rowClassName={(record, index) => {
+                // Background alternant: gri deschis pentru index par, altă culoare pentru impar
+                const baseClass = theme.TABLE_CONFIG.rowClassName || '';
+                const bgClass = index % 2 === 0 ? 'row-bg-light' : 'row-bg-alternate';
+                return `${baseClass} ${bgClass}`;
+              }}
               size="small"
               expandable={{
                 expandedRowKeys: expandedRows,
@@ -1434,11 +1449,16 @@ export default function ProductivityCalculatorPage() {
                     },
                   ];
 
+                  // Găsește index-ul produsului pentru a aplica același background
+                  const productIndex = products.findIndex(p => p.key === record.key);
+                  const bgColor = productIndex % 2 === 0 
+                    ? '#f8f9fa' // Gri foarte deschis pentru index par
+                    : '#f0f4f8'; // Culoare alternativă pentru index impar
 
                   return (
                     <div style={{ 
                       padding: '16px 16px 16px 0',
-                      background: theme.COLORS.primaryLight, 
+                      background: bgColor, 
                       borderRadius: theme.RADIUS.md 
                     }}>
                       <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
