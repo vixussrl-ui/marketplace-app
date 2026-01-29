@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message, Modal, Form, Select, Spin, Switch, Collapse } from 'antd';
+import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message, Modal, Form, Select, Spin, Switch, Collapse, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, SaveOutlined, SettingOutlined, CloudDownloadOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
@@ -14,7 +14,8 @@ export default function ProductivityCalculatorPage() {
   const [electricityForm] = Form.useForm();
   const [electricitySettings, setElectricitySettings] = useState({
     printerConsumption: 0.12,
-    electricityCost: 1.11
+    electricityCost: 1.11,
+    targetPrintRate: 22.00 // Target RON/oră (setare globală)
   });
   const [emagRomaniaCredential, setEmagRomaniaCredential] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -134,19 +135,23 @@ export default function ProductivityCalculatorPage() {
 
     const printerConsumption = electricitySettings.printerConsumption || 0.12; // kW
     const electricityCost = electricitySettings.electricityCost || 1.11; // lei/kWh
+    // Folosește override-ul produsului dacă există, altfel folosește setarea globală
+    const effectiveTargetPerHour = targetPerHour !== null && targetPerHour !== undefined 
+      ? targetPerHour 
+      : (electricitySettings.targetPrintRate || 22.00);
 
     // Dacă este produs cu multiple părți, fiecare parte este calculată independent
     if (isMultipleParts && parts && parts.length > 0) {
       let totalBestPrice = 0;
-      let totalCostMaterial = 0;
-      let totalElectricity = 0;
-      let totalPrintTime = 0;
-      let minPrintPerHour = Infinity;
+      let totalCostMaterialPerPiece = 0; // Suma costurilor materiale per piesă pentru toate părțile
+      let totalElectricityPerPiece = 0; // Suma costurilor de electricitate per piesă pentru toate părțile
+      let totalPrintTimePerPiece = 0; // Suma timpului per piesă pentru toate părțile (secvențial)
       let hasValidParts = false;
       
       const commissionDecimal = commissionEmag / 100;
       
-      // Pentru fiecare parte, calculăm independent: printPerHour, bestPrice, costuri
+      // Pentru fiecare parte, calculăm independent: bestPrice, costuri
+      // Părțile sunt printate secvențial, deci timpul total = suma timpului per piesă pentru fiecare parte
       parts.forEach(part => {
         const partPrintTime = part.printTime !== null && part.printTime !== undefined ? part.printTime : 0;
         const partStackSize = part.stackSize !== null && part.stackSize !== undefined ? part.stackSize : 1;
@@ -157,32 +162,30 @@ export default function ProductivityCalculatorPage() {
           hasValidParts = true;
         }
         
-        // Print per hour pentru această parte (job independent)
+        // Timp per piesă pentru această parte (platePrintTime / plateStackSize)
+        const partTimePerPiece = partStackSize > 0 ? partPrintTime / partStackSize : 0;
+        totalPrintTimePerPiece += partTimePerPiece;
+        
+        // Print per hour pentru această parte (folosit doar pentru calculul bestPrice per parte)
         const partPrintPerHour = partPrintTime > 0 ? (partStackSize * 60) / partPrintTime : 0;
         
         // Costuri per piesă pentru această parte
         const partCostMaterialPerPiece = partStackSize > 0 ? partCostMaterial / partStackSize : 0;
+        totalCostMaterialPerPiece += partCostMaterialPerPiece;
         
         // Electricity pentru această parte
         const partElectricity = partPrintTime > 0 ? (partPrintTime / 60) * printerConsumption * electricityCost : 0;
         const partElectricityPerPiece = partStackSize > 0 ? partElectricity / partStackSize : 0;
+        totalElectricityPerPiece += partElectricityPerPiece;
         
         // Best price pentru această parte (calculat independent)
-        const partTargetPerPiece = partPrintPerHour > 0 ? targetPerHour / partPrintPerHour : 0;
+        const partTargetPerPiece = partPrintPerHour > 0 ? effectiveTargetPerHour / partPrintPerHour : 0;
         const partBestPrice = (partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece) > 0
           ? (partTargetPerPiece + partCostMaterialPerPiece + partElectricityPerPiece) / (1 - commissionDecimal)
           : 0;
         
         // Adunăm bestPrice-urile pentru a obține prețul total
         totalBestPrice += partBestPrice;
-        totalCostMaterial += partCostMaterial;
-        totalElectricity += partElectricity;
-        totalPrintTime = Math.max(totalPrintTime, partPrintTime);
-        
-        // Print per hour global = cel mai mic (cel mai lent job determină viteza)
-        if (partPrintPerHour > 0) {
-          minPrintPerHour = Math.min(minPrintPerHour, partPrintPerHour);
-        }
       });
 
       if (!hasValidParts) {
@@ -190,19 +193,18 @@ export default function ProductivityCalculatorPage() {
           electricity: '0.00',
           printPerHour: '0.00',
           bestPrice: '0.00',
-          targetPerHour: targetPerHour.toFixed(2),
+          targetPerHour: effectiveTargetPerHour.toFixed(2),
           profitPerPiece: '0.00',
           profitPerHour: '0.00',
         };
       }
 
-      // Print per hour global = cel mai mic printPerHour (cel mai lent job)
-      const printPerHour = minPrintPerHour === Infinity ? 0 : minPrintPerHour;
+      // Printed items/hour = 60 / (suma timpului per piesă pentru toate părțile)
+      // Părțile sunt printate secvențial, deci timpul total = Σ(platePrintTime_part / plateStackSize_part)
+      const printPerHour = totalPrintTimePerPiece > 0 ? 60 / totalPrintTimePerPiece : 0;
       
       // Costuri totale per piesă (suma tuturor părților)
-      // Pentru profit, folosim costurile totale
-      const totalCostMaterialPerPiece = totalCostMaterial; // Cost total material pentru toate părțile
-      const totalElectricityPerPiece = totalElectricity; // Cost total electricitate pentru toate părțile
+      // totalCostMaterialPerPiece și totalElectricityPerPiece sunt deja calculate ca sume per piesă
 
       // Profit REAL per piesă = pretEmag - (pretEmag * commissionEmag) - totalCostMaterialPerPiece - totalElectricityPerPiece
       // Profit contabil real: cât îți rămâne în mână după comision + costuri (FĂRĂ target)
@@ -212,14 +214,14 @@ export default function ProductivityCalculatorPage() {
         ? effectivePretEmag - (effectivePretEmag * commissionDecimalValue) - totalCostMaterialPerPiece - totalElectricityPerPiece
         : 0;
 
-      // Profit per hour = profitPerPiece * printPerHour (cel mai lent job)
+      // Profit per hour = profitPerPiece * printPerHour
       const profitPerHour = profitPerPiece * printPerHour;
 
       return {
-        electricity: totalElectricity.toFixed(2),
+        electricity: totalElectricityPerPiece.toFixed(2), // Suma costurilor de electricitate per piesă pentru toate părțile
         printPerHour: printPerHour.toFixed(2),
         bestPrice: totalBestPrice.toFixed(2), // Suma bestPrice-urilor pentru toate părțile
-        targetPerHour: targetPerHour.toFixed(2),
+        targetPerHour: effectiveTargetPerHour.toFixed(2),
         profitPerPiece: profitPerPiece.toFixed(2),
         profitPerHour: profitPerHour.toFixed(2),
       };
@@ -245,7 +247,8 @@ export default function ProductivityCalculatorPage() {
     
     // 4. Best price = (targetRONperHour / printPerHour + costMaterialPerPiece + electricityPerPiece) / (1 - commissionEmag)
     // Cel mai bun preț de vânzare pentru a atinge target-ul de profit pe oră
-    const targetPerPieceForPricing = printPerHour > 0 ? targetPerHour / printPerHour : 0;
+    // effectiveTargetPerHour este deja declarat la începutul funcției
+    const targetPerPieceForPricing = printPerHour > 0 ? effectiveTargetPerHour / printPerHour : 0;
     const bestPrice = (targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece) > 0
       ? (targetPerPieceForPricing + costMaterialPerPiece + electricityPerPiece) / (1 - commissionDecimal)
       : 0;
@@ -265,7 +268,7 @@ export default function ProductivityCalculatorPage() {
         electricity: electricity.toFixed(2),
         printPerHour: printPerHour.toFixed(2),
         bestPrice: bestPrice.toFixed(2),
-        targetPerHour: targetPerHour.toFixed(2),
+        targetPerHour: effectiveTargetPerHour.toFixed(2),
         profitPerPiece: profitPerPiece.toFixed(2),
         profitPerHour: profitPerHour.toFixed(2),
       };
@@ -278,13 +281,13 @@ export default function ProductivityCalculatorPage() {
   }, [addProductForm]);
 
   const handleAddProduct = useCallback((values) => {
-    const { isMultipleParts, productName, sku } = values;
+    const { isMultipleParts, productName, sku, targetPerHour } = values;
     const newProduct = {
       key: Date.now().toString(),
       productName: productName || '',
       sku: sku || '',
       isMultipleParts: isMultipleParts || false,
-      targetPerHour: 22, // 🎯 Target lei/oră (valoare fixă, editabilă)
+      targetPerHour: targetPerHour !== null && targetPerHour !== undefined ? targetPerHour : null, // null = folosește setarea globală
       commissionEmag: 10,
       pretEmag: 0, // Prețul real din eMAG România (hardcoded, editabil)
     };
@@ -448,7 +451,11 @@ export default function ProductivityCalculatorPage() {
 
   const edit = useCallback((record) => {
     setEditingKey(record.key);
-  }, []);
+    // Expandă automat rândul dacă este produs cu multiple parts
+    if (record.isMultipleParts && !expandedRows.includes(record.key)) {
+      setExpandedRows(prev => [...prev, record.key]);
+    }
+  }, [expandedRows]);
 
   const cancel = useCallback(() => {
     setEditingKey('');
@@ -560,7 +567,11 @@ export default function ProductivityCalculatorPage() {
 
   const columns = useMemo(() => [
     {
-      title: 'Object',
+      title: (
+        <Tooltip title="The name of the product. This is the main identifier for the product in the calculator.">
+          <span>Object</span>
+        </Tooltip>
+      ),
       dataIndex: 'productName',
       key: 'productName',
       width: 250,
@@ -573,7 +584,11 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'SKU',
+      title: (
+        <Tooltip title="Stock Keeping Unit - the unique identifier for the product. Used to fetch the price from eMAG API.">
+          <span>SKU</span>
+        </Tooltip>
+      ),
       dataIndex: 'sku',
       key: 'sku',
       width: 150,
@@ -581,7 +596,11 @@ export default function ProductivityCalculatorPage() {
       render: (text) => text || <span style={{ color: '#999' }}>—</span>,
     },
     {
-      title: 'Multiple Parts',
+      title: (
+        <Tooltip title="Indicates if the product consists of multiple parts that are printed sequentially. For multiple parts products, each part has its own print time, stack size, and material cost.">
+          <span>Multiple Parts</span>
+        </Tooltip>
+      ),
       key: 'isMultipleParts',
       width: 120,
       align: 'center',
@@ -594,7 +613,11 @@ export default function ProductivityCalculatorPage() {
       ),
     },
     {
-      title: 'Best Price',
+      title: (
+        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: (Target per piece + Material Cost per piece + Electricity Cost per piece) / (1 - EMAG Commission %). For multiple parts products, this is the sum of best prices for all parts.">
+          <span>Best Price (RON)</span>
+        </Tooltip>
+      ),
       key: 'bestPrice',
       width: 180,
       align: 'center',
@@ -604,7 +627,11 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'EMAG RO Price',
+      title: (
+        <Tooltip title="The current selling price on eMAG Romania. This price is fetched automatically from the eMAG API using the product's SKU. It cannot be edited manually.">
+          <span>EMAG RO Price (RON)</span>
+        </Tooltip>
+      ),
       dataIndex: 'pretEmag',
       key: 'pretEmag',
       width: 200,
@@ -616,7 +643,11 @@ export default function ProductivityCalculatorPage() {
       ),
     },
     {
-      title: 'Profit/item',
+      title: (
+        <Tooltip title="Real profit per item after all costs and commissions. Calculated as: EMAG RO Price - (EMAG RO Price * Commission %) - Material Cost per piece - Electricity Cost per piece. This represents the actual accounting profit, not a target.">
+          <span>Profit/item (RON)</span>
+        </Tooltip>
+      ),
       key: 'profitPerPiece',
       width: 180,
       align: 'center',
@@ -635,7 +666,11 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'Profit/hour',
+      title: (
+        <Tooltip title="Real profit per hour. Calculated as: Profit/item * Printed items/hour. This shows the actual profit rate based on current selling price and production speed.">
+          <span>Profit/hour (RON)</span>
+        </Tooltip>
+      ),
       key: 'profitPerHour',
       width: 180,
       align: 'center',
@@ -654,7 +689,11 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'Printed items/hour',
+      title: (
+        <Tooltip title="Number of complete items printed per hour. For single-part products: (Plate Stack Size * 60) / Plate Print Time. For multiple parts products: 60 / (Sum of (Plate Print Time / Plate Stack Size) for all parts), since parts are printed sequentially.">
+          <span>Printed items/hour</span>
+        </Tooltip>
+      ),
       key: 'printPerHour',
       width: 180,
       align: 'center',
@@ -664,17 +703,11 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'Target Print Rate (RON/H)',
-      dataIndex: 'targetPerHour',
-      key: 'targetPerHour',
-      width: 180,
-      editable: true,
-      inputType: 'decimal',
-      align: 'center',
-      render: (value) => <span style={{ fontSize: '15px', fontWeight: 600 }}>{parseFloat(value || 22).toFixed(2)}</span>,
-    },
-    {
-      title: 'Electricity Cost',
+      title: (
+        <Tooltip title="Total electricity cost per item. Calculated as: (Plate Print Time / 60) * Printer Consumption (kW) * Electricity Cost (lei/kWh) / Plate Stack Size. For multiple parts products, this is the sum of electricity costs per piece for all parts.">
+          <span>Electricity Cost (RON)</span>
+        </Tooltip>
+      ),
       key: 'electricity',
       width: 150,
       align: 'center',
@@ -684,37 +717,38 @@ export default function ProductivityCalculatorPage() {
       },
     },
     {
-      title: 'Plate Stack Size',
-      dataIndex: 'stackSize',
-      key: 'stackSize',
-      width: 150,
-      editable: (record) => !record.isMultipleParts,
-      inputType: 'number',
-      align: 'right',
-      render: (value, record) => {
-        if (record.isMultipleParts) {
-          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
-        }
-        return <span style={{ fontSize: '15px' }}>{value || 1}</span>;
-      },
-    },
-    {
-      title: 'Material Cost',
-      dataIndex: 'costMaterial',
-      key: 'costMaterial',
+      title: (
+        <Tooltip title="Target profit rate in RON per hour. This is a global setting that can be overridden per product. Used to calculate the 'Best Price'. If not set for a product, the global setting from Settings is used.">
+          <span>Target Print Rate (RON/H)</span>
+        </Tooltip>
+      ),
+      dataIndex: 'targetPerHour',
+      key: 'targetPerHour',
       width: 180,
-      editable: (record) => !record.isMultipleParts,
+      editable: true,
       inputType: 'decimal',
       align: 'center',
       render: (value, record) => {
-        if (record.isMultipleParts) {
-          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
-        }
-        return <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>;
+        // Dacă nu există override, afișează setarea globală
+        const displayValue = value !== null && value !== undefined 
+          ? value 
+          : (electricitySettings.targetPrintRate || 22.00);
+        return (
+          <span style={{ fontSize: '15px', fontWeight: 600 }}>
+            {parseFloat(displayValue).toFixed(2)}
+            {value === null || value === undefined ? (
+              <span style={{ fontSize: '11px', color: '#999', marginLeft: '4px' }}>(global)</span>
+            ) : null}
+          </span>
+        );
       },
     },
     {
-      title: 'EMAG Commission',
+      title: (
+        <Tooltip title="eMAG marketplace commission percentage. This percentage is deducted from the selling price when calculating profit. Default is 10%.">
+          <span>EMAG Commission</span>
+        </Tooltip>
+      ),
       dataIndex: 'commissionEmag',
       key: 'commissionEmag',
       width: 180,
@@ -724,7 +758,79 @@ export default function ProductivityCalculatorPage() {
       render: (value) => <span style={{ fontSize: '15px' }}>{parseFloat(value || 10).toFixed(1)}</span>,
     },
     {
-      title: 'Actions',
+      title: (
+        <Tooltip title="Total print time in minutes for one plate. For multiple parts products, this is not applicable at the product level - each part has its own print time.">
+          <span>Plate Print Time</span>
+        </Tooltip>
+      ),
+      dataIndex: 'printTime',
+      key: 'printTime',
+      width: 150,
+      editable: (record) => !record.isMultipleParts,
+      inputType: 'number',
+      align: 'center',
+      render: (value, record) => {
+        if (record.isMultipleParts) {
+          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
+        }
+        return <span style={{ fontSize: '15px' }}>{value || 0}</span>;
+      },
+    },
+    {
+      title: (
+        <Tooltip title="Number of items that can be printed on one plate. Used to calculate cost per piece and items per hour. For multiple parts products, this is not applicable at the product level - each part has its own stack size.">
+          <span>Plate Stack Size</span>
+        </Tooltip>
+      ),
+      dataIndex: 'stackSize',
+      key: 'stackSize',
+      width: 150,
+      editable: (record) => !record.isMultipleParts,
+      inputType: 'number',
+      align: 'center',
+      render: (value, record) => {
+        if (record.isMultipleParts) {
+          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
+        }
+        return <span style={{ fontSize: '15px' }}>{value || 1}</span>;
+      },
+    },
+    {
+      title: (
+        <Tooltip title="Total material cost for one plate. The cost per piece is calculated as: Material Cost / Plate Stack Size. For multiple parts products, this is the sum of (Material Cost / Plate Stack Size) for all parts.">
+          <span>Material Cost</span>
+        </Tooltip>
+      ),
+      dataIndex: 'costMaterial',
+      key: 'costMaterial',
+      width: 180,
+      editable: (record) => !record.isMultipleParts,
+      inputType: 'decimal',
+      align: 'center',
+      render: (value, record) => {
+        if (record.isMultipleParts) {
+          // Pentru produse cu multiple parts, calculăm suma costurilor materiale per piesă
+          if (record.parts && record.parts.length > 0) {
+            let totalCostMaterialPerPiece = 0;
+            record.parts.forEach(part => {
+              const partCostMaterial = part.costMaterial !== null && part.costMaterial !== undefined ? part.costMaterial : 0;
+              const partStackSize = part.stackSize !== null && part.stackSize !== undefined ? part.stackSize : 1;
+              const partCostMaterialPerPiece = partStackSize > 0 ? partCostMaterial / partStackSize : 0;
+              totalCostMaterialPerPiece += partCostMaterialPerPiece;
+            });
+            return <span style={{ fontSize: '15px' }}>{parseFloat(totalCostMaterialPerPiece).toFixed(2)}</span>;
+          }
+          return <span style={{ fontSize: '15px', color: '#999' }}>—</span>;
+        }
+        return <span style={{ fontSize: '15px' }}>{parseFloat(value || 0).toFixed(2)}</span>;
+      },
+    },
+    {
+      title: (
+        <Tooltip title="Available actions for the product: Edit (to modify product details), Delete (to remove the product from the calculator). For multiple parts products, clicking Edit will also expand the row to show parts.">
+          <span>Actions</span>
+        </Tooltip>
+      ),
       key: 'actions',
       width: 180,
       render: (_, record) => {
@@ -934,14 +1040,27 @@ export default function ProductivityCalculatorPage() {
                     return null;
                   }
                   
-                  const isEditingParts = editingParts[record.key];
+                  // Parts-urile sunt în modul de editare când produsul este în modul de editare
+                  const isEditingParts = editingKey === record.key;
                   
+                  // Structură tabel părți: coloană dummy pentru expand + Part Name (în dreptul Object) + coloane cu "-" + coloane reale pentru părți
                   const partColumns = [
+                    // Coloană dummy pentru a compensa coloana de expand din tabelul principal
                     {
-                      title: 'Part Name',
+                      title: '',
+                      key: 'dummy-expand',
+                      width: 56, // Lățimea coloanei de expand
+                      render: () => null,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="The name of the part. Each part in a multiple parts product has its own print time, stack size, and material cost.">
+                          <span>Part Name</span>
+                        </Tooltip>
+                      ),
                       dataIndex: 'partName',
                       key: 'partName',
-                      width: 200,
+                      width: 250, // Aceeași lățime ca "Object"
                       render: (text, partRecord) => {
                         if (isEditingParts) {
                           return (
@@ -957,11 +1076,145 @@ export default function ProductivityCalculatorPage() {
                       },
                     },
                     {
-                      title: 'Plate Print Time',
+                      title: (
+                        <Tooltip title="Stock Keeping Unit - the unique identifier for the product. Used to fetch the price from eMAG API.">
+                          <span>SKU</span>
+                        </Tooltip>
+                      ),
+                      key: 'dummy-sku',
+                      width: 150,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Indicates if the product consists of multiple parts that are printed sequentially. For multiple parts products, each part has its own print time, stack size, and material cost.">
+                          <span>Multiple Parts</span>
+                        </Tooltip>
+                      ),
+                      key: 'dummy-multiple',
+                      width: 120,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="The minimum viable selling price to achieve the target print rate per hour. Calculated as: (Target per piece + Material Cost per piece + Electricity Cost per piece) / (1 - EMAG Commission %). For multiple parts products, this is the sum of best prices for all parts.">
+                          <span>Best Price (RON)</span>
+                        </Tooltip>
+                      ),
+                      key: 'dummy-best-price',
+                      width: 180,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="The current selling price on eMAG Romania. This price is fetched automatically from the eMAG API using the product's SKU. It cannot be edited manually.">
+                          <span>EMAG RO Price (RON)</span>
+                        </Tooltip>
+                      ),
+                      key: 'dummy-emag-price',
+                      width: 200,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Real profit per item after all costs and commissions. Calculated as: EMAG RO Price - (EMAG RO Price * Commission %) - Material Cost per piece - Electricity Cost per piece. This represents the actual accounting profit, not a target.">
+                          <span>Profit/item (RON)</span>
+                        </Tooltip>
+                      ),
+                      key: 'dummy-profit-item',
+                      width: 180,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Real profit per hour. Calculated as: Profit/item * Printed items/hour. This shows the actual profit rate based on current selling price and production speed.">
+                          <span>Profit/hour (RON)</span>
+                        </Tooltip>
+                      ),
+                      key: 'dummy-profit-hour',
+                      width: 180,
+                      align: 'center',
+                      render: () => <span style={{ color: '#999' }}>—</span>,
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Number of complete items printed per hour. For single-part products: (Plate Stack Size * 60) / Plate Print Time. For multiple parts products: 60 / (Sum of (Plate Print Time / Plate Stack Size) for all parts), since parts are printed sequentially.">
+                          <span>Printed items/hour</span>
+                        </Tooltip>
+                      ),
+                      key: 'printed-items-per-hour',
+                      width: 180,
+                      align: 'center',
+                      render: (_, partRecord) => {
+                        const partPrintTime = partRecord.printTime !== null && partRecord.printTime !== undefined ? partRecord.printTime : 0;
+                        const partStackSize = partRecord.stackSize !== null && partRecord.stackSize !== undefined ? partRecord.stackSize : 1;
+                        const printPerHour = partPrintTime > 0 ? (partStackSize * 60) / partPrintTime : 0;
+                        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{printPerHour.toFixed(2)}</span>;
+                      },
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Total electricity cost per item. Calculated as: (Plate Print Time / 60) * Printer Consumption (kW) * Electricity Cost (lei/kWh) / Plate Stack Size. For multiple parts products, this is the sum of electricity costs per piece for all parts.">
+                          <span>Electricity Cost (RON)</span>
+                        </Tooltip>
+                      ),
+                      key: 'electricity-cost',
+                      width: 150,
+                      align: 'center',
+                      render: (_, partRecord) => {
+                        const printerConsumption = electricitySettings.printerConsumption || 0.12; // kW
+                        const electricityCost = electricitySettings.electricityCost || 1.11; // lei/kWh
+                        const partPrintTime = partRecord.printTime !== null && partRecord.printTime !== undefined ? partRecord.printTime : 0;
+                        const partStackSize = partRecord.stackSize !== null && partRecord.stackSize !== undefined ? partRecord.stackSize : 1;
+                        const partElectricity = partPrintTime > 0 ? (partPrintTime / 60) * printerConsumption * electricityCost : 0;
+                        return <span style={{ color: theme.COLORS.text.body, fontSize: '15px' }}>{partElectricity.toFixed(2)}</span>;
+                      },
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Target profit rate in RON per hour. This is a global setting that can be overridden per product. Used to calculate the 'Best Price'. If not set for a product, the global setting from Settings is used.">
+                          <span>Target Print Rate (RON/H)</span>
+                        </Tooltip>
+                      ),
+                      key: 'target-print-rate',
+                      width: 180,
+                      align: 'center',
+                      render: () => {
+                        const targetPerHour = record.targetPerHour !== null && record.targetPerHour !== undefined 
+                          ? record.targetPerHour 
+                          : (electricitySettings.targetPrintRate || 22.00);
+                        return <span style={{ fontSize: '15px', fontWeight: 600 }}>{parseFloat(targetPerHour).toFixed(2)}</span>;
+                      },
+                    },
+                    {
+                      title: (
+                        <Tooltip title="eMAG marketplace commission percentage. This percentage is deducted from the selling price when calculating profit. Default is 10%.">
+                          <span>EMAG Commission</span>
+                        </Tooltip>
+                      ),
+                      key: 'emag-commission',
+                      width: 180,
+                      align: 'center',
+                      render: () => {
+                        const commissionEmag = record.commissionEmag !== null && record.commissionEmag !== undefined ? record.commissionEmag : 10;
+                        return <span style={{ fontSize: '15px' }}>{parseFloat(commissionEmag).toFixed(1)}</span>;
+                      },
+                    },
+                    {
+                      title: (
+                        <Tooltip title="Total print time in minutes for one plate. For multiple parts products, this is not applicable at the product level - each part has its own print time.">
+                          <span>Plate Print Time</span>
+                        </Tooltip>
+                      ),
                       dataIndex: 'printTime',
                       key: 'printTime',
                       width: 150,
-                      align: 'right',
+                      align: 'center',
                       render: (value, partRecord) => {
                         if (isEditingParts) {
                           return (
@@ -978,11 +1231,15 @@ export default function ProductivityCalculatorPage() {
                       },
                     },
                     {
-                      title: 'Plate Stack Size',
+                      title: (
+                        <Tooltip title="Number of items that can be printed on one plate. Used to calculate cost per piece and items per hour. For multiple parts products, this is not applicable at the product level - each part has its own stack size.">
+                          <span>Plate Stack Size</span>
+                        </Tooltip>
+                      ),
                       dataIndex: 'stackSize',
                       key: 'stackSize',
                       width: 150,
-                      align: 'right',
+                      align: 'center',
                       render: (value, partRecord) => {
                         if (isEditingParts) {
                           return (
@@ -999,11 +1256,15 @@ export default function ProductivityCalculatorPage() {
                       },
                     },
                     {
-                      title: 'Material Cost',
+                      title: (
+                        <Tooltip title="Total material cost for one plate. The cost per piece is calculated as: Material Cost / Plate Stack Size. For multiple parts products, this is the sum of (Material Cost / Plate Stack Size) for all parts.">
+                          <span>Material Cost</span>
+                        </Tooltip>
+                      ),
                       dataIndex: 'costMaterial',
                       key: 'costMaterial',
-                      width: 150,
-                      align: 'right',
+                      width: 180,
+                      align: 'center',
                       render: (value, partRecord) => {
                         if (isEditingParts) {
                           return (
@@ -1022,9 +1283,13 @@ export default function ProductivityCalculatorPage() {
                       },
                     },
                     {
-                      title: 'Actions',
+                      title: (
+                        <Tooltip title="Available actions for the part: Remove (to delete the part from the product). Only available when editing parts.">
+                          <span>Actions</span>
+                        </Tooltip>
+                      ),
                       key: 'actions',
-                      width: 150,
+                      width: 180,
                       render: (_, partRecord) => {
                         if (isEditingParts) {
                           return (
@@ -1044,47 +1309,27 @@ export default function ProductivityCalculatorPage() {
                     },
                   ];
 
+
                   return (
-                    <div style={{ padding: '16px', background: theme.COLORS.primaryLight, borderRadius: theme.RADIUS.md }}>
+                    <div style={{ 
+                      padding: '16px 16px 16px 0',
+                      background: theme.COLORS.primaryLight, 
+                      borderRadius: theme.RADIUS.md 
+                    }}>
                       <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text strong style={{ fontSize: '16px' }}>Parts ({record.parts.length})</Text>
-                        <Space>
-                          {isEditingParts ? (
-                            <>
-                              <Button
-                                type="primary"
-                                size="small"
-                                icon={<SaveOutlined />}
-                                onClick={() => saveParts(record.key)}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                size="small"
-                                onClick={() => cancelParts(record.key)}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                type="primary"
-                                size="small"
-                                icon={<PlusCircleOutlined />}
-                                onClick={() => addPart(record.key)}
-                              >
-                                Add Part
-                              </Button>
-                              <Button
-                                size="small"
-                                onClick={() => editParts(record.key)}
-                              >
-                                Edit
-                              </Button>
-                            </>
-                          )}
-                        </Space>
+                        {isEditingParts && (
+                          <Space>
+                            <Button
+                              type="primary"
+                              size="small"
+                              icon={<PlusCircleOutlined />}
+                              onClick={() => addPart(record.key)}
+                            >
+                              Add Part
+                            </Button>
+                          </Space>
+                        )}
                       </div>
                       <Table
                         columns={partColumns}
@@ -1155,6 +1400,19 @@ export default function ProductivityCalculatorPage() {
               label="SKU"
             >
               <Input placeholder="Enter SKU (optional)" />
+            </Form.Item>
+            <Form.Item
+              name="targetPerHour"
+              label="Target Print Rate Override (RON/H)"
+              tooltip="Leave empty to use global setting from Settings. Set a value to override for this product only."
+            >
+              <InputNumber
+                min={0}
+                step={0.01}
+                precision={2}
+                placeholder="Use global setting"
+                style={{ width: '100%' }}
+              />
             </Form.Item>
             <Form.Item
               noStyle
@@ -1236,6 +1494,23 @@ export default function ProductivityCalculatorPage() {
                 step={0.01}
                 precision={2}
                 placeholder="1.11"
+                style={{ width: '100%', fontSize: '16px' }}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="targetPrintRate"
+              label="Target Print Rate (RON/H)"
+              rules={[
+                { required: true, message: 'Please enter target print rate' },
+                { type: 'number', min: 0, message: 'Target must be positive' }
+              ]}
+            >
+              <InputNumber
+                min={0}
+                step={0.01}
+                precision={2}
+                placeholder="22.00"
                 style={{ width: '100%', fontSize: '16px' }}
               />
             </Form.Item>

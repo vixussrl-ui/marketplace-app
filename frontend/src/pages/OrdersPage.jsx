@@ -133,7 +133,7 @@ export default function OrdersPage() {
         initialSyncDoneRef.current = true;
         handleRefresh(true); // silent initial sync
       } else {
-        loadAllOrders();
+      loadAllOrders();
       }
     }
   }, [credentials]);
@@ -336,7 +336,7 @@ export default function OrdersPage() {
         domain = 'bg';
       }
       const url = `https://marketplace.emag.${domain}/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
-      window.open(url, '_blank');
+    window.open(url, '_blank');
       return;
     }
 
