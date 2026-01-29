@@ -767,7 +767,7 @@ export default function ProductivityCalculatorPage() {
     },
     {
       title: (
-        <Tooltip title="The recommended selling price to achieve the target print rate. Calculated as: (Target Print Rate (RON/H) / Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
+        <Tooltip title="The recommended selling price to achieve the target profit per hour. Formula: (Target Print Rate (RON/H) ÷ Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). The first part (Target Print Rate ÷ Printed items/hour) represents the target profit per piece needed to reach your hourly profit goal. For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
           <span>Recommended Price (RON)</span>
         </Tooltip>
       ),
@@ -1254,7 +1254,7 @@ export default function ProductivityCalculatorPage() {
                     },
                     {
                       title: (
-                        <Tooltip title="The recommended selling price to achieve the target print rate. Calculated as: (Target Print Rate (RON/H) / Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
+                        <Tooltip title="The recommended selling price to achieve the target profit per hour. Formula: (Target Print Rate (RON/H) ÷ Printed items/hour) + Material Cost + Electricity Cost (RON) + Packaging Costs (RON). The first part (Target Print Rate ÷ Printed items/hour) represents the target profit per piece needed to reach your hourly profit goal. For multiple parts products, this is the sum of recommended prices for all parts plus packaging cost.">
                           <span>Recommended Price (RON)</span>
                         </Tooltip>
                       ),
