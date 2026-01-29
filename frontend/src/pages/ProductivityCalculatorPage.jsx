@@ -598,17 +598,6 @@ export default function ProductivityCalculatorPage() {
           extra={
             <Space>
               <Button
-                icon={<CloudDownloadOutlined />}
-                onClick={fetchAllEmagPrices}
-                style={{
-                  fontSize: '15px',
-                  padding: '6px 16px',
-                  height: 'auto'
-                }}
-              >
-                Fetch Prices
-              </Button>
-              <Button
                 icon={<SettingOutlined />}
                 onClick={() => setElectricityModalVisible(true)}
                 style={{
@@ -618,6 +607,17 @@ export default function ProductivityCalculatorPage() {
                 }}
               >
                 Settings
+              </Button>
+              <Button
+                icon={<CloudDownloadOutlined />}
+                onClick={fetchAllEmagPrices}
+                style={{
+                  fontSize: '15px',
+                  padding: '6px 16px',
+                  height: 'auto'
+                }}
+              >
+                Fetch Prices
               </Button>
               <Button
                 type="primary"
