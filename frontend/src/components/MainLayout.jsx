@@ -44,10 +44,12 @@ export default function MainLayout({ children, currentKey }) {
           onClick={(info) => {
             if (info.key === 'orders') navigate('/orders');
             if (info.key === 'settings') navigate('/platforms');
+            if (info.key === 'calculator') navigate('/calculator');
           }}
           className="main-menu"
           items={[
             { key: 'orders', label: 'Orders' },
+            { key: 'calculator', label: 'Calculator' },
             { key: 'settings', label: 'Settings' }
           ]}
         />

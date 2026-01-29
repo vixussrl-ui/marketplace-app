@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import PlatformsPage from './pages/PlatformsPage';
 import OrdersPage from './pages/OrdersPage';
+import ProductivityCalculatorPage from './pages/ProductivityCalculatorPage';
 import './App.css';
 
 function PrivateRoute({ children }) {
@@ -31,6 +32,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <OrdersPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/calculator"
+          element={
+            <PrivateRoute>
+              <ProductivityCalculatorPage />
             </PrivateRoute>
           }
         />
