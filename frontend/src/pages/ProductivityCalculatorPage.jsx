@@ -1,307 +1,405 @@
-import React, { useState } from 'react';
-import { Card, Form, InputNumber, Input, Button, Space, Typography, Divider, Alert } from 'antd';
-import { CalculatorOutlined } from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { Card, Table, Button, Space, InputNumber, Input, Typography, Popconfirm, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
+
+const STORAGE_KEY = 'productivity_calculator_products';
 
 export default function ProductivityCalculatorPage() {
-  const [form] = Form.useForm();
-  const [result, setResult] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [editingKey, setEditingKey] = useState('');
 
-  const calculateBestPrice = (values) => {
+  // Load products from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setProducts(parsed);
+      } catch (e) {
+        console.error('Failed to load saved products:', e);
+      }
+    }
+  }, []);
+
+  // Save products to localStorage whenever they change
+  useEffect(() => {
+    if (products.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+    }
+  }, [products]);
+
+  const calculateRow = (record) => {
     const {
-      printTime,      // în minute
-      stackSize,      // număr de piese în stack
-      costMaterial,  // cost material per unitate (lei)
-      costElectricity, // cost electricitate per unitate (lei)
-      commissionShop, // comision magazin (%)
-    } = values;
+      printTime = 0,
+      stackSize = 1,
+      costMaterial = 0,
+      costElectricity = 0,
+      commissionShop = 15,
+    } = record;
 
     // Cost total per unitate
-    const costPerUnit = costMaterial + costElectricity;
-    
-    // Cost total pentru stack
-    const totalStackCost = costPerUnit * stackSize;
+    const costPerUnit = (costMaterial || 0) + (costElectricity || 0);
     
     // Calculăm prețul minim necesar pentru a acoperi costurile și comisionul
-    // Preț = Cost / (1 - Comision/100)
-    // Astfel, după ce se scade comisionul, rămâne exact costul
-    const commissionDecimal = commissionShop / 100;
-    const minPricePerUnit = costPerUnit / (1 - commissionDecimal);
-    const minPriceStack = minPricePerUnit * stackSize;
+    const commissionDecimal = (commissionShop || 15) / 100;
+    const minPricePerUnit = costPerUnit > 0 ? costPerUnit / (1 - commissionDecimal) : 0;
+    const minPriceStack = minPricePerUnit * (stackSize || 1);
     
     // Profit per unitate (după comision)
     const profitPerUnit = minPricePerUnit - costPerUnit;
-    const profitStack = profitPerUnit * stackSize;
+    const profitStack = profitPerUnit * (stackSize || 1);
     
     // Profit margin (%)
-    const profitMargin = (profitPerUnit / costPerUnit) * 100;
+    const profitMargin = costPerUnit > 0 ? (profitPerUnit / costPerUnit) * 100 : 0;
 
-    setResult({
+    return {
       costPerUnit: costPerUnit.toFixed(2),
-      totalStackCost: totalStackCost.toFixed(2),
       minPricePerUnit: minPricePerUnit.toFixed(2),
       minPriceStack: minPriceStack.toFixed(2),
       profitPerUnit: profitPerUnit.toFixed(2),
       profitStack: profitStack.toFixed(2),
       profitMargin: profitMargin.toFixed(2),
-      printTime,
-      stackSize,
-    });
+    };
   };
 
-  const onFinish = (values) => {
-    calculateBestPrice(values);
+  const addNewRow = () => {
+    const newProduct = {
+      key: Date.now().toString(),
+      productName: '',
+      printTime: 60,
+      stackSize: 1,
+      costMaterial: 0,
+      costElectricity: 0,
+      commissionShop: 15,
+    };
+    setProducts([...products, newProduct]);
+    setEditingKey(newProduct.key);
   };
 
-  const onReset = () => {
-    form.resetFields();
-    setResult(null);
+  const deleteRow = (key) => {
+    setProducts(products.filter(item => item.key !== key));
+    message.success('Product deleted');
   };
+
+  const isEditing = (record) => record.key === editingKey;
+
+  const edit = (record) => {
+    setEditingKey(record.key);
+  };
+
+  const cancel = () => {
+    setEditingKey('');
+  };
+
+  const save = (key) => {
+    setEditingKey('');
+    message.success('Product saved');
+  };
+
+  const EditableCell = ({ editing, dataIndex, title, record, children, inputType = 'text', ...restProps }) => {
+    return (
+      <td {...restProps}>
+        {editing ? (
+          inputType === 'number' || inputType === 'decimal' ? (
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              step={inputType === 'decimal' ? 0.01 : 1}
+              precision={inputType === 'decimal' ? 2 : 0}
+              value={record[dataIndex]}
+              onChange={(value) => {
+                const updated = products.map(item => {
+                  if (item.key === record.key) {
+                    return { ...item, [dataIndex]: value || 0 };
+                  }
+                  return item;
+                });
+                setProducts(updated);
+              }}
+            />
+          ) : (
+            <Input
+              style={{ width: '100%' }}
+              value={record[dataIndex] || ''}
+              onChange={(e) => {
+                const updated = products.map(item => {
+                  if (item.key === record.key) {
+                    return { ...item, [dataIndex]: e.target.value };
+                  }
+                  return item;
+                });
+                setProducts(updated);
+              }}
+            />
+          )
+        ) : (
+          children
+        )}
+      </td>
+    );
+  };
+
+  const columns = [
+    {
+      title: 'Product Name',
+      dataIndex: 'productName',
+      key: 'productName',
+      width: 200,
+      editable: true,
+      render: (text) => text || <span style={{ color: '#999' }}>—</span>,
+    },
+    {
+      title: 'Print Time (min)',
+      dataIndex: 'printTime',
+      key: 'printTime',
+      width: 120,
+      editable: true,
+      inputType: 'number',
+      align: 'right',
+      render: (value) => value || 0,
+    },
+    {
+      title: 'Stack Size',
+      dataIndex: 'stackSize',
+      key: 'stackSize',
+      width: 100,
+      editable: true,
+      inputType: 'number',
+      align: 'right',
+      render: (value) => value || 1,
+    },
+    {
+      title: 'Material Cost (lei)',
+      dataIndex: 'costMaterial',
+      key: 'costMaterial',
+      width: 140,
+      editable: true,
+      inputType: 'decimal',
+      align: 'right',
+      render: (value) => parseFloat(value || 0).toFixed(2),
+    },
+    {
+      title: 'Electricity Cost (lei)',
+      dataIndex: 'costElectricity',
+      key: 'costElectricity',
+      width: 150,
+      editable: true,
+      inputType: 'decimal',
+      align: 'right',
+      render: (value) => parseFloat(value || 0).toFixed(2),
+    },
+    {
+      title: 'Commission (%)',
+      dataIndex: 'commissionShop',
+      key: 'commissionShop',
+      width: 120,
+      editable: true,
+      inputType: 'decimal',
+      align: 'right',
+      render: (value) => parseFloat(value || 15).toFixed(1),
+    },
+    {
+      title: 'Cost/Unit (lei)',
+      key: 'costPerUnit',
+      width: 120,
+      align: 'right',
+      render: (_, record) => {
+        const calc = calculateRow(record);
+        return <strong style={{ color: theme.COLORS.text.body }}>{calc.costPerUnit}</strong>;
+      },
+    },
+    {
+      title: 'Best Price/Unit (lei)',
+      key: 'bestPricePerUnit',
+      width: 150,
+      align: 'right',
+      render: (_, record) => {
+        const calc = calculateRow(record);
+        return <strong style={{ color: theme.COLORS.success || '#10b981', fontSize: '14px' }}>{calc.minPricePerUnit}</strong>;
+      },
+    },
+    {
+      title: 'Best Price/Stack (lei)',
+      key: 'bestPriceStack',
+      width: 150,
+      align: 'right',
+      render: (_, record) => {
+        const calc = calculateRow(record);
+        return <strong style={{ color: theme.COLORS.success || '#10b981', fontSize: '14px' }}>{calc.minPriceStack}</strong>;
+      },
+    },
+    {
+      title: 'Profit/Unit (lei)',
+      key: 'profitPerUnit',
+      width: 120,
+      align: 'right',
+      render: (_, record) => {
+        const calc = calculateRow(record);
+        return <span style={{ color: theme.COLORS.success || '#10b981' }}>{calc.profitPerUnit}</span>;
+      },
+    },
+    {
+      title: 'Profit Margin (%)',
+      key: 'profitMargin',
+      width: 130,
+      align: 'right',
+      render: (_, record) => {
+        const calc = calculateRow(record);
+        return <span style={{ color: theme.COLORS.success || '#10b981' }}>{calc.profitMargin}%</span>;
+      },
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 150,
+      fixed: 'right',
+      render: (_, record) => {
+        const editable = isEditing(record);
+        return editable ? (
+          <Space>
+            <Button
+              type="primary"
+              onClick={() => save(record.key)}
+              size="small"
+              icon={<SaveOutlined />}
+            >
+              Save
+            </Button>
+            <Button
+              onClick={cancel}
+              size="small"
+            >
+              Cancel
+            </Button>
+          </Space>
+        ) : (
+          <Space>
+            <Button
+              type="link"
+              onClick={() => edit(record)}
+              size="small"
+            >
+              Edit
+            </Button>
+            <Popconfirm
+              title="Delete this product?"
+              onConfirm={() => deleteRow(record.key)}
+              okText="Yes"
+              cancelText="No"
+            >
+              <Button
+                type="link"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+              >
+                Delete
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
+    },
+  ];
+
+  const mergedColumns = columns.map((col) => {
+    if (!col.editable) {
+      return col;
+    }
+    return {
+      ...col,
+      onCell: (record) => ({
+        record,
+        inputType: col.inputType || 'text',
+        dataIndex: col.dataIndex,
+        title: col.title,
+        editing: isEditing(record),
+      }),
+    };
+  });
 
   return (
     <MainLayout currentKey="calculator">
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: theme.SPACING.md }}>
+      <style>
+        {`
+          .productivity-table .ant-table-tbody > tr > td {
+            padding: 8px 12px !important;
+          }
+          .productivity-table .ant-table-thead > tr > th {
+            padding: 10px 12px !important;
+            background: ${theme.COLORS.primaryLight} !important;
+            font-weight: 600 !important;
+          }
+          .productivity-table .ant-table-tbody > tr:hover > td {
+            background: ${theme.COLORS.primaryLight} !important;
+          }
+          .productivity-table .ant-table-wrapper {
+            overflow-x: auto;
+          }
+          .productivity-table input {
+            border: 1px solid ${theme.COLORS.border} !important;
+          }
+          .productivity-table input:focus {
+            border-color: ${theme.COLORS.primary} !important;
+            box-shadow: 0 0 0 2px ${theme.COLORS.primaryLight} !important;
+          }
+        `}
+      </style>
+      <div style={{ maxWidth: '100%', margin: '0 auto', padding: theme.SPACING.md }}>
         <Card
           title={
             <Space>
-              <CalculatorOutlined />
-              <span style={theme.TYPOGRAPHY.heading}>Productivity Calculator</span>
+              <Title level={4} style={{ margin: 0 }}>
+                Productivity Calculator
+              </Title>
             </Space>
           }
           style={theme.CARD_STYLES.base}
           headStyle={theme.CARD_STYLES.head}
           bodyStyle={theme.CARD_STYLES.body}
+          extra={
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={addNewRow}
+              style={theme.BUTTON_STYLES.primary}
+            >
+              Add Product
+            </Button>
+          }
         >
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={onFinish}
-            initialValues={{
-              printTime: 60,
-              stackSize: 1,
-              costMaterial: 0,
-              costElectricity: 0,
-              commissionShop: 15,
+          <Table
+            className="productivity-table"
+            components={{
+              body: {
+                cell: EditableCell,
+              },
             }}
-          >
-            <Form.Item
-              label="Product Name"
-              name="productName"
-              rules={[{ required: false, message: 'Optional product name' }]}
-            >
-              <Input placeholder="Enter product name (optional)" />
-            </Form.Item>
-
-            <Form.Item
-              label="Print Time (minutes)"
-              name="printTime"
-              rules={[{ required: true, message: 'Please enter print time' }]}
-              tooltip="Time required to print one unit"
-            >
-              <InputNumber
-                min={0}
-                step={1}
-                style={{ width: '100%' }}
-                placeholder="e.g., 60"
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Stack Size"
-              name="stackSize"
-              rules={[{ required: true, message: 'Please enter stack size' }]}
-              tooltip="Number of units printed in one batch"
-            >
-              <InputNumber
-                min={1}
-                step={1}
-                style={{ width: '100%' }}
-                placeholder="e.g., 1"
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Material Cost (lei per unit)"
-              name="costMaterial"
-              rules={[{ required: true, message: 'Please enter material cost' }]}
-            >
-              <InputNumber
-                min={0}
-                step={0.01}
-                precision={2}
-                style={{ width: '100%' }}
-                placeholder="e.g., 5.50"
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Electricity Cost (lei per unit)"
-              name="costElectricity"
-              rules={[{ required: true, message: 'Please enter electricity cost' }]}
-            >
-              <InputNumber
-                min={0}
-                step={0.01}
-                precision={2}
-                style={{ width: '100%' }}
-                placeholder="e.g., 0.50"
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Shop Commission (%)"
-              name="commissionShop"
-              rules={[{ required: true, message: 'Please enter shop commission' }]}
-              tooltip="Marketplace commission percentage (e.g., 15 for 15%)"
-            >
-              <InputNumber
-                min={0}
-                max={100}
-                step={0.1}
-                precision={1}
-                style={{ width: '100%' }}
-                placeholder="e.g., 15"
-              />
-            </Form.Item>
-
-            <Form.Item>
-              <Space>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<CalculatorOutlined />}
-                  size="large"
-                  style={theme.BUTTON_STYLES.primary}
-                >
-                  Calculate Best Price
-                </Button>
-                <Button
-                  onClick={onReset}
-                  size="large"
-                  style={theme.BUTTON_STYLES.secondary}
-                >
-                  Reset
-                </Button>
-              </Space>
-            </Form.Item>
-          </Form>
-
-          {result && (
-            <>
-              <Divider />
-              <Card
-                title={<Title level={4} style={{ margin: 0, color: theme.COLORS.primary }}>Calculation Results</Title>}
-                style={{
-                  background: theme.COLORS.primaryLight,
-                  border: `2px solid ${theme.COLORS.primary}`,
-                }}
-              >
-                {result.productName && (
-                  <Alert
-                    message={`Product: ${result.productName}`}
-                    type="info"
-                    style={{ marginBottom: theme.SPACING.md }}
-                  />
-                )}
-                
-                <div style={{ display: 'grid', gap: theme.SPACING.md }}>
-                  <div style={{ 
-                    padding: theme.SPACING.md, 
-                    background: 'white', 
-                    borderRadius: theme.RADIUS.md,
-                    border: `1px solid ${theme.COLORS.border}`
-                  }}>
-                    <Text strong style={{ fontSize: '16px', color: theme.COLORS.text.body }}>
-                      Cost Analysis
-                    </Text>
-                    <div style={{ marginTop: theme.SPACING.sm }}>
-                      <Text>Cost per unit: </Text>
-                      <Text strong style={{ color: theme.COLORS.text.body }}>
-                        {result.costPerUnit} lei
-                      </Text>
-                    </div>
-                    <div>
-                      <Text>Total stack cost ({result.stackSize} units): </Text>
-                      <Text strong style={{ color: theme.COLORS.text.body }}>
-                        {result.totalStackCost} lei
-                      </Text>
-                    </div>
-                    <div>
-                      <Text>Print time: </Text>
-                      <Text strong style={{ color: theme.COLORS.text.body }}>
-                        {result.printTime} minutes
-                      </Text>
-                    </div>
-                  </div>
-
-                  <div style={{ 
-                    padding: theme.SPACING.md, 
-                    background: theme.COLORS.successLight || '#f0f9ff',
-                    borderRadius: theme.RADIUS.md,
-                    border: `2px solid ${theme.COLORS.success || '#10b981'}`,
-                  }}>
-                    <Text strong style={{ fontSize: '18px', color: theme.COLORS.success || '#10b981' }}>
-                      🎯 Best Price
-                    </Text>
-                    <div style={{ marginTop: theme.SPACING.sm }}>
-                      <Text style={{ fontSize: '14px' }}>Per unit: </Text>
-                      <Text strong style={{ fontSize: '20px', color: theme.COLORS.success || '#10b981' }}>
-                        {result.minPricePerUnit} lei
-                      </Text>
-                    </div>
-                    <div>
-                      <Text style={{ fontSize: '14px' }}>Per stack ({result.stackSize} units): </Text>
-                      <Text strong style={{ fontSize: '20px', color: theme.COLORS.success || '#10b981' }}>
-                        {result.minPriceStack} lei
-                      </Text>
-                    </div>
-                  </div>
-
-                  <div style={{ 
-                    padding: theme.SPACING.md, 
-                    background: 'white', 
-                    borderRadius: theme.RADIUS.md,
-                    border: `1px solid ${theme.COLORS.border}`
-                  }}>
-                    <Text strong style={{ fontSize: '16px', color: theme.COLORS.text.body }}>
-                      Profit Analysis
-                    </Text>
-                    <div style={{ marginTop: theme.SPACING.sm }}>
-                      <Text>Profit per unit: </Text>
-                      <Text strong style={{ color: theme.COLORS.success || '#10b981' }}>
-                        {result.profitPerUnit} lei
-                      </Text>
-                    </div>
-                    <div>
-                      <Text>Profit per stack: </Text>
-                      <Text strong style={{ color: theme.COLORS.success || '#10b981' }}>
-                        {result.profitStack} lei
-                      </Text>
-                    </div>
-                    <div>
-                      <Text>Profit margin: </Text>
-                      <Text strong style={{ color: theme.COLORS.success || '#10b981' }}>
-                        {result.profitMargin}%
-                      </Text>
-                    </div>
-                  </div>
-                </div>
-
-                <Alert
-                  message="Note"
-                  description="Best price is calculated to cover all costs and marketplace commission. This is the minimum price to break even. You may want to add additional profit margin on top of this."
-                  type="info"
-                  style={{ marginTop: theme.SPACING.md }}
-                />
-              </Card>
-            </>
+            columns={mergedColumns}
+            dataSource={products}
+            rowKey="key"
+            pagination={false}
+            scroll={{ x: 1500 }}
+            locale={theme.TABLE_CONFIG.locale}
+            style={theme.TABLE_CONFIG.tableStyle}
+            rowClassName={() => theme.TABLE_CONFIG.rowClassName}
+            size="small"
+          />
+          {products.length === 0 && (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '40px 0',
+              color: theme.COLORS.text.muted 
+            }}>
+              No products yet. Click "Add Product" to get started.
+            </div>
           )}
         </Card>
       </div>
     </MainLayout>
   );
 }
-
