@@ -409,16 +409,47 @@ class TrendyolClient:
                         }
                         items.append(item_data)
 
-                    # Determină vendor_code bazat pe account_label pentru a păstra informația despre țară
-                    # Frontend-ul folosește vendor_code pentru a determina marketplace-ul (TRENDYOL RO, TRENDYOL GR, etc.)
-                    label_upper = (self.account_label or "").upper()
-                    if "GR" in label_upper or "GREECE" in label_upper or "GRECIA" in label_upper or "TRENDYOL.GR" in label_upper:
-                        vendor_code = "trendyol_gr"
-                    elif "BG" in label_upper or "BULGARIA" in label_upper or "TRENDYOL.BG" in label_upper:
-                        vendor_code = "trendyol_bg"
+                    # Extragem țara din răspunsul API-ului Trendyol
+                    # API-ul poate returna informații despre țară în diferite câmpuri:
+                    # - storefrontCode (ex: "TR", "GR", "BG")
+                    # - countryCode
+                    # - marketplace
+                    # - shippingAddress/countryCode
+                    # - etc.
+                    vendor_code = "trendyol_ro"  # Default: România
+                    
+                    # Încercăm să extragem țara din diferite câmpuri din răspuns
+                    storefront_code = order.get("storefrontCode", "").upper()
+                    country_code = order.get("countryCode", "").upper()
+                    marketplace = order.get("marketplace", "").upper()
+                    
+                    # Verificăm shippingAddress dacă există
+                    shipping_address = order.get("shippingAddress", {})
+                    if isinstance(shipping_address, dict):
+                        shipping_country = shipping_address.get("countryCode", "").upper()
                     else:
-                        # Default: România
+                        shipping_country = ""
+                    
+                    # Log pentru debugging - să vedem ce câmpuri returnează API-ul
+                    if len(raw_orders) > 0 and raw_orders.index(order) == 0:
+                        print(f"[TRENDYOL DEBUG] Sample order fields: storefrontCode={storefront_code}, countryCode={country_code}, marketplace={marketplace}, shippingAddress.countryCode={shipping_country}")
+                        print(f"[TRENDYOL DEBUG] Full order keys: {list(order.keys())}")
+                    
+                    # Determină țara bazat pe câmpurile disponibile
+                    if storefront_code == "GR" or country_code == "GR" or marketplace == "GR" or shipping_country == "GR":
+                        vendor_code = "trendyol_gr"
+                    elif storefront_code == "BG" or country_code == "BG" or marketplace == "BG" or shipping_country == "BG":
+                        vendor_code = "trendyol_bg"
+                    elif storefront_code == "TR" or country_code == "TR" or marketplace == "TR" or shipping_country == "TR" or storefront_code == "RO" or country_code == "RO" or marketplace == "RO" or shipping_country == "RO":
                         vendor_code = "trendyol_ro"
+                    else:
+                        # Dacă nu găsim informații despre țară în răspuns, folosim account_label ca fallback
+                        label_upper = (self.account_label or "").upper()
+                        if "GR" in label_upper or "GREECE" in label_upper or "GRECIA" in label_upper or "TRENDYOL.GR" in label_upper:
+                            vendor_code = "trendyol_gr"
+                        elif "BG" in label_upper or "BULGARIA" in label_upper or "TRENDYOL.BG" in label_upper:
+                            vendor_code = "trendyol_bg"
+                        # Altfel rămâne "trendyol_ro" (default)
                     
                     order_data = {
                         "order_id": str(order.get("orderNumber")),
