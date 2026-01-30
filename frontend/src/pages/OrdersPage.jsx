@@ -228,9 +228,9 @@ export default function OrdersPage() {
           console.error(`Failed to load orders for credential ${cred.id}:`, error);
         }
       }
-      // Eliminăm duplicatele bazate pe platform_order_id
-      // Pentru eMAG, același platform_order_id nu ar trebui să apară pentru mai multe țări (RO, BG, HU)
-      // Dacă apare, păstrăm doar una, prioritizând RO > BG > HU
+      // Eliminăm duplicatele bazate pe platform_order_id + marketplace
+      // Dacă același platform_order_id apare pentru mai multe țări eMAG (RO, BG, HU), 
+      // păstrăm doar una, prioritizând RO > BG > HU
       const seenOrders = new Map();
       const uniqueOrders = [];
       
@@ -243,33 +243,56 @@ export default function OrdersPage() {
         return 99; // Alte marketplace-uri
       };
       
+      // Grupăm comenzile după platform_order_id pentru a detecta duplicatele
+      const ordersByPlatformId = new Map();
       for (const order of allOrders) {
-        // Cheia de deduplicare: doar platform_order_id (nu includem marketplace)
-        // Astfel, o comandă cu același ID va apărea doar o dată, indiferent de țară
-        const key = order.platform_order_id;
-        if (!seenOrders.has(key)) {
-          seenOrders.set(key, order);
-          uniqueOrders.push(order);
+        const platformId = order.platform_order_id;
+        if (!ordersByPlatformId.has(platformId)) {
+          ordersByPlatformId.set(platformId, []);
+        }
+        ordersByPlatformId.get(platformId).push(order);
+      }
+      
+      // Pentru fiecare platform_order_id, dacă există duplicate pentru eMAG (RO, BG, HU),
+      // păstrăm doar una (prioritizând RO > BG > HU)
+      for (const [platformId, ordersWithSameId] of ordersByPlatformId.entries()) {
+        // Verificăm dacă există duplicate pentru eMAG (RO, BG, HU)
+        const emagOrders = ordersWithSameId.filter(o => {
+          const m = (o.marketplace || '').toUpperCase();
+          return m.startsWith('EMAG');
+        });
+        
+        if (emagOrders.length > 1) {
+          // Există duplicate pentru eMAG - păstrăm doar una, prioritizând RO > BG > HU
+          emagOrders.sort((a, b) => {
+            const priorityA = getMarketplacePriority(a.marketplace);
+            const priorityB = getMarketplacePriority(b.marketplace);
+            if (priorityA !== priorityB) {
+              return priorityA - priorityB; // Mai mic = mai prioritar
+            }
+            // Dacă au aceeași prioritate, păstrăm cea mai recentă
+            const dateA = new Date(a.created_at || 0);
+            const dateB = new Date(b.created_at || 0);
+            if (dateB.getTime() !== dateA.getTime()) {
+              return dateB - dateA; // Mai recentă
+            }
+            return a.credentialId - b.credentialId; // Același timestamp, credential_id mai mic
+          });
+          
+          // Păstrăm doar prima (cea cu prioritate cea mai mare)
+          const keptOrder = emagOrders[0];
+          const otherEmagOrders = emagOrders.slice(1);
+          
+          // Adăugăm comenzile non-eMAG și comanda eMAG păstrată
+          const nonEmagOrders = ordersWithSameId.filter(o => {
+            const m = (o.marketplace || '').toUpperCase();
+            return !m.startsWith('EMAG');
+          });
+          
+          uniqueOrders.push(keptOrder, ...nonEmagOrders);
         } else {
-          // Dacă există deja aceeași comandă, decidem care să o păstrăm
-          const existing = seenOrders.get(key);
-          const existingPriority = getMarketplacePriority(existing.marketplace);
-          const newPriority = getMarketplacePriority(order.marketplace);
-          
-          // Prioritizăm: RO > BG > HU, apoi cea mai recentă, apoi credential_id mai mic
-          const shouldReplace = 
-            newPriority < existingPriority || // Marketplace mai prioritar
-            (newPriority === existingPriority && (
-              new Date(order.created_at || 0) > new Date(existing.created_at || 0) || // Mai recentă
-              (new Date(order.created_at || 0).getTime() === new Date(existing.created_at || 0).getTime() && 
-               order.credentialId < existing.credentialId) // Același timestamp, credential_id mai mic
-            ));
-          
-          if (shouldReplace) {
-            const index = uniqueOrders.indexOf(existing);
-            uniqueOrders[index] = order;
-            seenOrders.set(key, order);
-          }
+          // Nu există duplicate pentru eMAG - păstrăm toate comenzile
+          uniqueOrders.push(...ordersWithSameId);
         }
       }
       
