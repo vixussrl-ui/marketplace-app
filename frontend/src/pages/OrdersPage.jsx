@@ -205,6 +205,8 @@ export default function OrdersPage() {
               const vendorCode = order.vendor_code || '';
               if (vendorCode.includes('trendyol_gr')) {
                 marketplace = 'TRENDYOL GR';
+              } else if (vendorCode.includes('trendyol_bg')) {
+                marketplace = 'TRENDYOL BG';
               } else if (vendorCode.includes('trendyol_ro')) {
                 marketplace = 'TRENDYOL RO';
               } else {
@@ -313,11 +315,15 @@ export default function OrdersPage() {
 
       if (vendorCodeLower.includes('trendyol_gr')) {
         country = 'gr';
+      } else if (vendorCodeLower.includes('trendyol_bg')) {
+        country = 'bg';
       } else if (vendorCodeLower.includes('trendyol_ro')) {
         country = 'ro';
       } else if (marketplace.includes('GR')) {
         // Match any variant containing GR (e.g. 'TRENDYOL GR', 'TRENDYOL_GR', etc.)
         country = 'gr';
+      } else if (marketplace.includes('BG')) {
+        country = 'bg';
       } else if (marketplace.includes('RO')) {
         country = 'ro';
       }

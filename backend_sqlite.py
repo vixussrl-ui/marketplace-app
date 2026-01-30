@@ -324,10 +324,11 @@ class EMAGClient:
 
 # Trendyol Client
 class TrendyolClient:
-    def __init__(self, supplier_id, api_key, api_secret):
+    def __init__(self, supplier_id, api_key, api_secret, account_label=None):
         self.supplier_id = supplier_id
         self.api_key = api_key
         self.api_secret = api_secret
+        self.account_label = account_label or ""
         self.base_url = "https://apigw.trendyol.com"
         self.status_map = {
             "Awaiting": "awaiting",
@@ -408,11 +409,22 @@ class TrendyolClient:
                         }
                         items.append(item_data)
 
+                    # Determină vendor_code bazat pe account_label pentru a păstra informația despre țară
+                    # Frontend-ul folosește vendor_code pentru a determina marketplace-ul (TRENDYOL RO, TRENDYOL GR, etc.)
+                    label_upper = (self.account_label or "").upper()
+                    if "GR" in label_upper or "GREECE" in label_upper or "GRECIA" in label_upper or "TRENDYOL.GR" in label_upper:
+                        vendor_code = "trendyol_gr"
+                    elif "BG" in label_upper or "BULGARIA" in label_upper or "TRENDYOL.BG" in label_upper:
+                        vendor_code = "trendyol_bg"
+                    else:
+                        # Default: România
+                        vendor_code = "trendyol_ro"
+                    
                     order_data = {
                         "order_id": str(order.get("orderNumber")),
                         "status": status_text,
                         "order_type": 3,
-                        "vendor_code": "trendyol",
+                        "vendor_code": vendor_code,
                         "created_at": self._convert_timestamp(order.get("orderDate")),
                         "items": items,
                     }
@@ -909,6 +921,7 @@ async def test_trendyol(credential_id: int, request: Request):
         supplier_id=cred_d.get("vendor_code") or cred_d.get("client_id"),
         api_key=cred_d.get("client_id"),
         api_secret=cred_d.get("client_secret", ""),
+        account_label=cred_d.get("account_label", ""),
     )
     
     # Test fără filtre de dată pentru a vedea toate comenzile
@@ -978,6 +991,7 @@ async def refresh_orders(request: Request):
                     supplier_id=cred_d.get("vendor_code") or cred_d.get("client_id"),
                     api_key=cred_d.get("client_id"),
                     api_secret=cred_d.get("client_secret", ""),
+                    account_label=cred_d.get("account_label", ""),
                 )
                 print(f"[REFRESH] TrendyolClient created successfully")
                 
