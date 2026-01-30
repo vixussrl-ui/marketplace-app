@@ -521,28 +521,19 @@ export default function OrdersPage() {
       const credentialId = order.credentialId;
       const marketplace = (order.marketplace || "").toUpperCase();
       
-      // Pentru Trendyol, verificăm toggle-ul pentru marketplace-ul specific
+      // Pentru Trendyol, verificăm doar toggle-ul pentru marketplace-ul specific (RO, GR, BG)
       if (marketplace.startsWith("TRENDYOL")) {
-        // Verificăm dacă credential-ul este activat
-        const cred = credentials.find(c => c.id === credentialId);
-        if (cred && cred.platform === 2) {
-          // Dacă credential-ul este dezactivat, ascundem toate comenzile Trendyol
-          if (credentialToggles[credentialId] === false) {
-            return false;
-          }
-        }
-        
-        // Verificăm toggle-ul pentru marketplace-ul specific (RO, GR, BG)
         if (trendyolMarketplaceToggles[marketplace] === false) {
           return false;
         }
+        return true; // Dacă marketplace-ul este activat, afișăm comanda
       }
       
       // Pentru celelalte platforme, folosim logica normală
       // Dacă nu există toggle pentru acest credential, afișăm comanda (default true)
       return credentialToggles[credentialId] !== false;
     });
-  }, [orders, credentialToggles, trendyolMarketplaceToggles, credentials]);
+  }, [orders, credentialToggles, trendyolMarketplaceToggles]);
 
   const productSummary = useMemo(() => {
     const emagProducts = {};
@@ -628,26 +619,12 @@ export default function OrdersPage() {
         }}>
           <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
           {credentials.map(cred => {
-            const displayName = getCredentialDisplayName(cred);
-            const color = getCredentialColor(cred);
-            const isEnabled = credentialToggles[cred.id] !== false;
-            
-            // Pentru Trendyol, afișăm toggle-uri separate pentru fiecare țară
+            // Pentru Trendyol, afișăm doar toggle-uri separate pentru fiecare țară (fără butonul principal)
             if (cred.platform === 2) {
               const trendyolMarketplaces = ['TRENDYOL RO', 'TRENDYOL GR', 'TRENDYOL BG'];
               return (
-                <div key={cred.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {/* Toggle pentru credential-ul Trendyol (ascunde/arată toate țările) */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '12px', color: color, fontWeight: 500 }}>{displayName}</span>
-                    <Switch 
-                      size="small"
-                      checked={isEnabled}
-                      onChange={(checked) => updateCredentialToggle(cred.id, checked)}
-                    />
-                  </div>
-                  {/* Toggle-uri separate pentru fiecare țară */}
-                  {isEnabled && trendyolMarketplaces.map(marketplace => {
+                <React.Fragment key={cred.id}>
+                  {trendyolMarketplaces.map(marketplace => {
                     const marketplaceColor = getMarketplaceColor(marketplace);
                     const marketplaceEnabled = trendyolMarketplaceToggles[marketplace] !== false;
                     return (
@@ -661,11 +638,14 @@ export default function OrdersPage() {
                       </div>
                     );
                   })}
-                </div>
+                </React.Fragment>
               );
             }
             
             // Pentru celelalte platforme, afișăm toggle normal
+            const displayName = getCredentialDisplayName(cred);
+            const color = getCredentialColor(cred);
+            const isEnabled = credentialToggles[cred.id] !== false;
             return (
               <div key={cred.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '12px', color: color, fontWeight: 500 }}>{displayName}</span>
