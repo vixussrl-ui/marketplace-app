@@ -163,11 +163,25 @@ class SignupRequest(BaseModel):
 
 # EMAG Client
 class EMAGClient:
-    def __init__(self, client_id, client_secret, vendor_code):
+    def __init__(self, client_id, client_secret, vendor_code, account_label=None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.vendor_code = vendor_code
-        self.api_url = "https://marketplace-api.emag.ro/api-3/order/read"
+        
+        # Determină URL-ul API-ului bazat pe țară (conform documentației eMAG)
+        # eMAG RO: https://marketplace-api.emag.ro/api-3
+        # eMAG BG: https://marketplace-api.emag.bg/api-3
+        # eMAG HU: https://marketplace-api.emag.hu/api-3
+        label_upper = (account_label or "").upper()
+        if "HU" in label_upper or "HUNGARY" in label_upper or "UNGARIA" in label_upper or "EMAG.HU" in label_upper:
+            self.base_url = "https://marketplace-api.emag.hu/api-3"
+        elif "BG" in label_upper or "BULGARIA" in label_upper or "BULGARIA" in label_upper or "EMAG.BG" in label_upper:
+            self.base_url = "https://marketplace-api.emag.bg/api-3"
+        else:
+            # Default: România
+            self.base_url = "https://marketplace-api.emag.ro/api-3"
+        
+        self.api_url = f"{self.base_url}/order/read"
         self.status_map = {
             0: "canceled",
             1: "new",
@@ -261,7 +275,7 @@ class EMAGClient:
             }
             
             # Conform documentației eMAG, folosim product_offer/read cu filtru part_number
-            offer_url = "https://marketplace-api.emag.ro/api-3/product_offer/read"
+            offer_url = f"{self.base_url}/product_offer/read"
             
             # Payload conform documentației: filtru part_number
             payload = {
@@ -949,9 +963,15 @@ async def refresh_orders(request: Request):
         if platform == 1:
             print(f"[REFRESH] Fetching EMAG orders")
             client = EMAGClient(
+            client_id=cred_d["client_id"],
+            client_secret=cred_d.get("client_secret", ""),
+            vendor_code=cred_d["vendor_code"],
+            account_label=cred_d.get("account_label", ""),
+        )
                 client_id=cred_d["client_id"],
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
+                account_label=cred_d.get("account_label", ""),
             )
             # DOAR comenzi noi (1) și in progress (2)
             print(f"[REFRESH][EMAG] Fetching ONLY 'new' (1) and 'in progress' (2) orders")
@@ -1107,6 +1127,11 @@ async def get_emag_product_price(request: Request, data: dict):
     
     try:
         client = EMAGClient(
+            client_id=cred_d["client_id"],
+            client_secret=cred_d.get("client_secret", ""),
+            vendor_code=cred_d["vendor_code"],
+            account_label=cred_d.get("account_label", ""),
+        )
             client_id=cred_d.get("client_id", ""),
             client_secret=cred_d.get("client_secret", ""),
             vendor_code=cred_d.get("vendor_code", "")
