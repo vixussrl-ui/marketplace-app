@@ -228,22 +228,44 @@ export default function OrdersPage() {
           console.error(`Failed to load orders for credential ${cred.id}:`, error);
         }
       }
-      // Eliminăm duplicatele bazate pe platform_order_id și marketplace
-      // Dacă aceeași comandă apare pentru credentiale diferite (ex: România și Ungaria), păstrăm doar una
+      // Eliminăm duplicatele bazate pe platform_order_id
+      // Pentru eMAG, același platform_order_id nu ar trebui să apară pentru mai multe țări (RO, BG, HU)
+      // Dacă apare, păstrăm doar una, prioritizând RO > BG > HU
       const seenOrders = new Map();
       const uniqueOrders = [];
+      
+      // Funcție pentru a determina prioritatea marketplace-ului (mai mic = mai prioritar)
+      const getMarketplacePriority = (marketplace) => {
+        const m = (marketplace || '').toUpperCase();
+        if (m === 'EMAG RO' || m === 'EMAG') return 1;
+        if (m === 'EMAG BG') return 2;
+        if (m === 'EMAG HU') return 3;
+        return 99; // Alte marketplace-uri
+      };
+      
       for (const order of allOrders) {
-        // Cheia de deduplicare: platform_order_id + marketplace (fără credential_id)
-        const key = `${order.platform_order_id}-${order.marketplace}`;
+        // Cheia de deduplicare: doar platform_order_id (nu includem marketplace)
+        // Astfel, o comandă cu același ID va apărea doar o dată, indiferent de țară
+        const key = order.platform_order_id;
         if (!seenOrders.has(key)) {
           seenOrders.set(key, order);
           uniqueOrders.push(order);
         } else {
-          // Dacă există deja aceeași comandă, păstrăm cea mai recentă
+          // Dacă există deja aceeași comandă, decidem care să o păstrăm
           const existing = seenOrders.get(key);
-          const existingDate = new Date(existing.created_at || 0);
-          const newDate = new Date(order.created_at || 0);
-          if (newDate > existingDate || (newDate.getTime() === existingDate.getTime() && order.credentialId < existing.credentialId)) {
+          const existingPriority = getMarketplacePriority(existing.marketplace);
+          const newPriority = getMarketplacePriority(order.marketplace);
+          
+          // Prioritizăm: RO > BG > HU, apoi cea mai recentă, apoi credential_id mai mic
+          const shouldReplace = 
+            newPriority < existingPriority || // Marketplace mai prioritar
+            (newPriority === existingPriority && (
+              new Date(order.created_at || 0) > new Date(existing.created_at || 0) || // Mai recentă
+              (new Date(order.created_at || 0).getTime() === new Date(existing.created_at || 0).getTime() && 
+               order.credentialId < existing.credentialId) // Același timestamp, credential_id mai mic
+            ));
+          
+          if (shouldReplace) {
             const index = uniqueOrders.indexOf(existing);
             uniqueOrders[index] = order;
             seenOrders.set(key, order);
