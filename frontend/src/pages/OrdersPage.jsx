@@ -488,13 +488,31 @@ export default function OrdersPage() {
   ];
 
   // Filtrează orders în funcție de toggle-uri active pentru fiecare credential
+  // Pentru Trendyol, filtrează după marketplace (TRENDYOL RO, TRENDYOL GR, TRENDYOL BG)
+  // pentru a permite filtrarea separată a comenzilor din diferite țări
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
       const credentialId = order.credentialId;
+      const marketplace = (order.marketplace || "").toUpperCase();
+      
+      // Pentru Trendyol, verificăm dacă marketplace-ul este activat
+      if (marketplace.startsWith("TRENDYOL")) {
+        // Căutăm credential-ul asociat și verificăm toggle-ul
+        const cred = credentials.find(c => c.id === credentialId);
+        if (cred && cred.platform === 2) {
+          // Pentru Trendyol, verificăm toggle-ul credential-ului
+          // Dacă toggle-ul este dezactivat, ascundem toate comenzile Trendyol
+          if (credentialToggles[credentialId] === false) {
+            return false;
+          }
+        }
+      }
+      
+      // Pentru celelalte platforme, folosim logica normală
       // Dacă nu există toggle pentru acest credential, afișăm comanda (default true)
       return credentialToggles[credentialId] !== false;
     });
-  }, [orders, credentialToggles]);
+  }, [orders, credentialToggles, credentials]);
 
   const productSummary = useMemo(() => {
     const emagProducts = {};
