@@ -963,11 +963,6 @@ async def refresh_orders(request: Request):
         if platform == 1:
             print(f"[REFRESH] Fetching EMAG orders")
             client = EMAGClient(
-            client_id=cred_d["client_id"],
-            client_secret=cred_d.get("client_secret", ""),
-            vendor_code=cred_d["vendor_code"],
-            account_label=cred_d.get("account_label", ""),
-        )
                 client_id=cred_d["client_id"],
                 client_secret=cred_d.get("client_secret", ""),
                 vendor_code=cred_d["vendor_code"],
@@ -1127,14 +1122,10 @@ async def get_emag_product_price(request: Request, data: dict):
     
     try:
         client = EMAGClient(
-            client_id=cred_d["client_id"],
-            client_secret=cred_d.get("client_secret", ""),
-            vendor_code=cred_d["vendor_code"],
-            account_label=cred_d.get("account_label", ""),
-        )
             client_id=cred_d.get("client_id", ""),
             client_secret=cred_d.get("client_secret", ""),
-            vendor_code=cred_d.get("vendor_code", "")
+            vendor_code=cred_d.get("vendor_code", ""),
+            account_label=cred_d.get("account_label", ""),
         )
         
         price = await client.fetch_product_price(sku)
