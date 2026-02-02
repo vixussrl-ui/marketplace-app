@@ -358,12 +358,14 @@ class EMAGClient:
                 results = data.get("results", [])
                 if results and len(results) > 0:
                     offer = results[0]
-                    # Stocul poate fi în diferite câmpuri: stock, quantity, available_quantity
-                    stock = offer.get("stock") or offer.get("quantity") or offer.get("available_quantity") or 0
-                    if stock:
-                        print(f"[EMAG] Found stock: {stock} for SKU: {sku}")
-                        return int(stock)
+                    # Conform documentației eMAG, stocul este în general_stock sau estimated_stock
+                    # general_stock = suma stocului din toate depozitele
+                    # estimated_stock = stocul estimat (ține cont de stocul rezervat pe comenzi neconfirmate)
+                    stock = offer.get("general_stock") or offer.get("estimated_stock") or 0
+                    print(f"[EMAG] Found stock: {stock} (general_stock={offer.get('general_stock')}, estimated_stock={offer.get('estimated_stock')}) for SKU: {sku}")
+                    return int(stock) if stock else 0
                 
+                print(f"[EMAG] No results found for SKU: {sku}")
                 return 0
         except Exception as e:
             print(f"[ERROR] Error fetching EMAG product stock: {type(e).__name__}: {e}")
@@ -598,16 +600,24 @@ class TrendyolClient:
                 content = data.get("content", [])
                 if content and len(content) > 0:
                     product = content[0]
-                    # Stocul poate fi în diferite câmpuri: stock, quantity, availableQuantity, stockQuantity
+                    # Conform documentației Trendyol, stocul poate fi în diferite câmpuri
+                    # Vom verifica mai multe câmpuri posibile și vom loga răspunsul pentru debugging
+                    print(f"[TRENDYOL DEBUG] Product response keys: {list(product.keys())}")
+                    print(f"[TRENDYOL DEBUG] Full product data for {sku}: {product}")
+                    
+                    # Câmpuri posibile pentru stoc în Trendyol API
                     stock = (product.get("stock") or 
                             product.get("quantity") or 
                             product.get("availableQuantity") or 
-                            product.get("stockQuantity") or 
+                            product.get("stockQuantity") or
+                            product.get("inventory") or
+                            product.get("availableStock") or
                             0)
-                    if stock:
-                        print(f"[TRENDYOL] Found stock: {stock} for SKU: {sku}")
-                        return int(stock)
+                    
+                    print(f"[TRENDYOL] Found stock: {stock} for SKU: {sku}")
+                    return int(stock) if stock else 0
                 
+                print(f"[TRENDYOL] No products found for SKU: {sku}")
                 return 0
         except Exception as e:
             print(f"[ERROR] Error fetching Trendyol product stock: {type(e).__name__}: {e}")
