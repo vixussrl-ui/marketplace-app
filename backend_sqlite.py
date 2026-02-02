@@ -603,16 +603,32 @@ class TrendyolClient:
                     # Conform documentației Trendyol, stocul poate fi în diferite câmpuri
                     # Vom verifica mai multe câmpuri posibile și vom loga răspunsul pentru debugging
                     print(f"[TRENDYOL DEBUG] Product response keys: {list(product.keys())}")
-                    print(f"[TRENDYOL DEBUG] Full product data for {sku}: {product}")
+                    print(f"[TRENDYOL DEBUG] Full product data for {sku}: {str(product)[:500]}")  # Limitează la 500 caractere
                     
                     # Câmpuri posibile pentru stoc în Trendyol API
-                    stock = (product.get("stock") or 
-                            product.get("quantity") or 
-                            product.get("availableQuantity") or 
-                            product.get("stockQuantity") or
-                            product.get("inventory") or
-                            product.get("availableStock") or
-                            0)
+                    # Conform documentației, stocul poate fi în:
+                    # - stockQuantity (cel mai probabil)
+                    # - quantity
+                    # - availableQuantity
+                    # - inventory (poate fi un obiect)
+                    stock = None
+                    
+                    # Verificăm dacă există un câmp inventory (poate fi un obiect)
+                    inventory = product.get("inventory")
+                    if inventory:
+                        if isinstance(inventory, dict):
+                            stock = inventory.get("quantity") or inventory.get("availableQuantity") or inventory.get("stockQuantity") or inventory.get("totalQuantity")
+                        elif isinstance(inventory, (int, float)):
+                            stock = inventory
+                    
+                    # Dacă nu am găsit în inventory, verificăm direct pe product
+                    if stock is None:
+                        stock = (product.get("stockQuantity") or 
+                                product.get("quantity") or 
+                                product.get("availableQuantity") or 
+                                product.get("stock") or
+                                product.get("availableStock") or
+                                0)
                     
                     print(f"[TRENDYOL] Found stock: {stock} for SKU: {sku}")
                     return int(stock) if stock else 0
