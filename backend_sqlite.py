@@ -321,6 +321,88 @@ class EMAGClient:
             traceback.print_exc()
             return None
 
+    async def fetch_product_stock(self, sku):
+        """Preluează stocul unui produs de pe eMAG folosind SKU (part_number)"""
+        try:
+            headers = {
+                "Authorization": self._get_auth_header(),
+                "Content-Type": "application/json",
+            }
+            
+            # Folosim product_offer/read pentru a obține stocul
+            offer_url = f"{self.base_url}/product_offer/read"
+            
+            payload = {
+                "data": {
+                    "part_number": sku
+                }
+            }
+            
+            print(f"[EMAG] Fetching stock for SKU (part_number): {sku}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(offer_url, json=payload, headers=headers)
+                
+                if response.status_code == 404:
+                    print(f"[EMAG] Product not found for SKU: {sku}")
+                    return None
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get("isError"):
+                    error_msg = data.get("messages", ["Unknown error"])
+                    print(f"[ERROR] EMAG API error: {error_msg}")
+                    return None
+                
+                results = data.get("results", [])
+                if results and len(results) > 0:
+                    offer = results[0]
+                    # Stocul poate fi în diferite câmpuri: stock, quantity, available_quantity
+                    stock = offer.get("stock") or offer.get("quantity") or offer.get("available_quantity") or 0
+                    if stock:
+                        print(f"[EMAG] Found stock: {stock} for SKU: {sku}")
+                        return int(stock)
+                
+                return 0
+        except Exception as e:
+            print(f"[ERROR] Error fetching EMAG product stock: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def fetch_products_stock(self, product_codes=None):
+        """
+        Fetch-uiește stocurile pentru mai multe produse de pe eMAG
+        product_codes: listă de SKU-uri (part_number)
+        Returnează un dict: {sku: stock_value}
+        """
+        if not product_codes:
+            return {}
+        
+        stock_dict = {}
+        for sku in product_codes:
+            try:
+                stock = await self.fetch_product_stock(sku)
+                if stock is not None:
+                    stock_dict[sku] = {
+                        "code": sku,
+                        "stock": stock
+                    }
+                else:
+                    stock_dict[sku] = {
+                        "code": sku,
+                        "stock": 0
+                    }
+            except Exception as e:
+                print(f"[ERROR] Error fetching stock for {sku}: {e}")
+                stock_dict[sku] = {
+                    "code": sku,
+                    "stock": 0
+                }
+        
+        return stock_dict
+
 
 # Trendyol Client
 class TrendyolClient:
@@ -479,6 +561,91 @@ class TrendyolClient:
         except Exception as e:
             print(f"[TRENDYOL] Error converting timestamp: {e}")
             return str(timestamp_ms)
+
+    async def fetch_product_stock(self, sku):
+        """Preluează stocul unui produs de pe Trendyol folosind SKU (merchantSku)"""
+        try:
+            # Trendyol folosește endpoint-ul pentru products cu filtru merchantSku
+            url = f"{self.base_url}/suppliers/{self.supplier_id}/v2/products"
+            params = {
+                "merchantSku": sku,
+                "page": 0,
+                "size": 1
+            }
+            
+            headers = {
+                "Authorization": self._get_auth_header(),
+                "Content-Type": "application/json",
+                "User-Agent": f"{self.supplier_id} - SelfIntegration",
+            }
+            
+            print(f"[TRENDYOL] Fetching stock for SKU: {sku}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, headers=headers, params=params)
+                
+                if response.status_code == 404:
+                    print(f"[TRENDYOL] Product not found for SKU: {sku}")
+                    return 0
+                
+                if response.status_code != 200:
+                    print(f"[TRENDYOL] Error response: {response.status_code}, {response.text}")
+                    return 0
+                
+                data = response.json()
+                
+                # Trendyol returnează un array de produse în "content"
+                content = data.get("content", [])
+                if content and len(content) > 0:
+                    product = content[0]
+                    # Stocul poate fi în diferite câmpuri: stock, quantity, availableQuantity, stockQuantity
+                    stock = (product.get("stock") or 
+                            product.get("quantity") or 
+                            product.get("availableQuantity") or 
+                            product.get("stockQuantity") or 
+                            0)
+                    if stock:
+                        print(f"[TRENDYOL] Found stock: {stock} for SKU: {sku}")
+                        return int(stock)
+                
+                return 0
+        except Exception as e:
+            print(f"[ERROR] Error fetching Trendyol product stock: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+
+    async def fetch_products_stock(self, product_codes=None):
+        """
+        Fetch-uiește stocurile pentru mai multe produse de pe Trendyol
+        product_codes: listă de SKU-uri (merchantSku)
+        Returnează un dict: {sku: stock_value}
+        """
+        if not product_codes:
+            return {}
+        
+        stock_dict = {}
+        for sku in product_codes:
+            try:
+                stock = await self.fetch_product_stock(sku)
+                if stock is not None:
+                    stock_dict[sku] = {
+                        "code": sku,
+                        "stock": stock
+                    }
+                else:
+                    stock_dict[sku] = {
+                        "code": sku,
+                        "stock": 0
+                    }
+            except Exception as e:
+                print(f"[ERROR] Error fetching stock for {sku}: {e}")
+                stock_dict[sku] = {
+                    "code": sku,
+                    "stock": 0
+                }
+        
+        return stock_dict
 
 
 # Oblio Client (pentru stocuri)
@@ -927,6 +1094,105 @@ async def get_oblio_stock(request: Request, data: dict):
     
     except Exception as e:
         print(f"[ERROR] Error fetching Oblio stock: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"stock": {}, "error": str(e)}
+
+
+@app.post("/emag/stock")
+async def get_emag_stock(request: Request, data: dict):
+    """
+    Returnează stocurile eMAG pentru produsele specificate (doar România)
+    Request body: {"product_codes": ["SKU1", "SKU2", ...]}
+    """
+    user = get_current_user(request)
+    product_codes = data.get("product_codes", [])
+    
+    if not product_codes:
+        return {"stock": {}}
+    
+    # Găsim credențialele eMAG RO pentru user
+    cur = conn.execute(
+        "SELECT * FROM credentials WHERE user_id = ? AND platform = 1",
+        (user["id"],)
+    )
+    creds = cur.fetchall()
+    
+    # Căutăm credential-ul pentru România
+    emag_ro_cred = None
+    for cred_row in creds:
+        cred_d = row_to_dict(cred_row)
+        label = (cred_d.get("account_label") or "").upper()
+        # Verificăm dacă NU este HU sau BG (deci este RO)
+        if not (("HU" in label or "HUNGARY" in label or "UNGARIA" in label or "EMAG.HU" in label) or
+                ("BG" in label or "BULGARIA" in label or "EMAG.BG" in label)):
+            emag_ro_cred = cred_d
+            break
+    
+    if not emag_ro_cred:
+        print(f"[EMAG] No eMAG RO credentials found for user {user['id']}")
+        return {"stock": {}, "error": "No eMAG RO credentials configured"}
+    
+    try:
+        client = EMAGClient(
+            client_id=emag_ro_cred.get("client_id", ""),
+            client_secret=emag_ro_cred.get("client_secret", ""),
+            vendor_code=emag_ro_cred.get("vendor_code", ""),
+            account_label=emag_ro_cred.get("account_label", ""),
+        )
+        
+        print(f"[EMAG] Fetching stock for {len(product_codes)} products")
+        stock_dict = await client.fetch_products_stock(product_codes)
+        
+        return {"stock": stock_dict}
+    
+    except Exception as e:
+        print(f"[ERROR] Error fetching EMAG stock: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"stock": {}, "error": str(e)}
+
+
+@app.post("/trendyol/stock")
+async def get_trendyol_stock(request: Request, data: dict):
+    """
+    Returnează stocurile Trendyol pentru produsele specificate (shared cross-platform)
+    Request body: {"product_codes": ["SKU1", "SKU2", ...]}
+    """
+    user = get_current_user(request)
+    product_codes = data.get("product_codes", [])
+    
+    if not product_codes:
+        return {"stock": {}}
+    
+    # Găsim credențialele Trendyol pentru user (orice credential Trendyol, deoarece stocul este shared)
+    cur = conn.execute(
+        "SELECT * FROM credentials WHERE user_id = ? AND platform = 2 LIMIT 1",
+        (user["id"],)
+    )
+    cred = cur.fetchone()
+    
+    if not cred:
+        print(f"[TRENDYOL] No Trendyol credentials found for user {user['id']}")
+        return {"stock": {}, "error": "No Trendyol credentials configured"}
+    
+    cred_d = row_to_dict(cred)
+    
+    try:
+        client = TrendyolClient(
+            supplier_id=cred_d.get("vendor_code") or cred_d.get("client_id"),
+            api_key=cred_d.get("client_id"),
+            api_secret=cred_d.get("client_secret", ""),
+            account_label=cred_d.get("account_label", ""),
+        )
+        
+        print(f"[TRENDYOL] Fetching stock for {len(product_codes)} products")
+        stock_dict = await client.fetch_products_stock(product_codes)
+        
+        return {"stock": stock_dict}
+    
+    except Exception as e:
+        print(f"[ERROR] Error fetching Trendyol stock: {e}")
         import traceback
         traceback.print_exc()
         return {"stock": {}, "error": str(e)}

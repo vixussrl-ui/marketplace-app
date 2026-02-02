@@ -15,6 +15,8 @@ export default function OrdersPage() {
   const [lastRefreshTime, setLastRefreshTime] = useState(null);
   const [nextRefreshIn, setNextRefreshIn] = useState(AUTO_REFRESH_INTERVAL / 1000);
   const [oblioStock, setOblioStock] = useState({});
+  const [emagStock, setEmagStock] = useState({});
+  const [trendyolStock, setTrendyolStock] = useState({});
   const [loadingStock, setLoadingStock] = useState(false);
   
   // Toggle-uri dinamice pentru fiecare credential (salvate în localStorage)
@@ -297,7 +299,6 @@ export default function OrdersPage() {
       return;
     }
     
-    setLoadingStock(true);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/oblio/stock`, {
@@ -319,8 +320,64 @@ export default function OrdersPage() {
     } catch (error) {
       console.error('Failed to load Oblio stock:', error);
       // Nu afișăm mesaj de eroare pentru a nu deranja utilizatorul
-    } finally {
-      setLoadingStock(false);
+    }
+  };
+
+  const loadEmagStock = async (productCodes) => {
+    if (!productCodes || productCodes.length === 0) {
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/emag/stock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ product_codes: productCodes })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch eMAG stock');
+      }
+      
+      const data = await response.json();
+      setEmagStock(data.stock || {});
+      console.log('[EMAG] Stock loaded:', data.stock);
+    } catch (error) {
+      console.error('Failed to load eMAG stock:', error);
+      // Nu afișăm mesaj de eroare pentru a nu deranja utilizatorul
+    }
+  };
+
+  const loadTrendyolStock = async (productCodes) => {
+    if (!productCodes || productCodes.length === 0) {
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/trendyol/stock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ product_codes: productCodes })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch Trendyol stock');
+      }
+      
+      const data = await response.json();
+      setTrendyolStock(data.stock || {});
+      console.log('[TRENDYOL] Stock loaded:', data.stock);
+    } catch (error) {
+      console.error('Failed to load Trendyol stock:', error);
+      // Nu afișăm mesaj de eroare pentru a nu deranja utilizatorul
     }
   };
 
@@ -594,11 +651,20 @@ export default function OrdersPage() {
     };
   }, [filteredOrders]);
 
-  // Load Oblio stock when product summary changes
+  // Load stock (Oblio, eMAG, Trendyol) when product summary changes
   useEffect(() => {
     if (productSummary.combined.length > 0) {
+      setLoadingStock(true);
       const productCodes = productSummary.combined.map(p => p.sku);
-      loadOblioStock(productCodes);
+      
+      // Load all stocks in parallel
+      Promise.all([
+        loadOblioStock(productCodes),
+        loadEmagStock(productCodes),
+        loadTrendyolStock(productCodes)
+      ]).finally(() => {
+        setLoadingStock(false);
+      });
     }
   }, [productSummary.combined]);
 
@@ -863,8 +929,8 @@ export default function OrdersPage() {
                 {
                   title: 'Stock Oblio',
                   dataIndex: 'sku',
-                  key: 'stock',
-                  width: '15%',
+                  key: 'stock_oblio',
+                  width: '12%',
                   align: 'center',
                   render: (sku) => {
                     if (loadingStock) {
@@ -882,6 +948,64 @@ export default function OrdersPage() {
                         fontSize: '14px',
                         padding: '4px 12px',
                         borderRadius: '6px'
+                      }}>
+                        {stockValue}
+                      </Tag>
+                    );
+                  },
+                },
+                {
+                  title: 'Stock eMAG RO',
+                  dataIndex: 'sku',
+                  key: 'stock_emag',
+                  width: '12%',
+                  align: 'center',
+                  render: (sku) => {
+                    if (loadingStock) {
+                      return <Tag color="blue">Loading...</Tag>;
+                    }
+                    const stockInfo = emagStock[sku];
+                    if (!stockInfo) {
+                      return <Tag color="gray">-</Tag>;
+                    }
+                    const stockValue = stockInfo.stock || 0;
+                    const stockColor = stockValue > 10 ? '#52c41a' : stockValue > 0 ? '#faad14' : '#f5222d';
+                    return (
+                      <Tag color={stockColor} style={{ 
+                        fontWeight: 'bold', 
+                        fontSize: '14px',
+                        padding: '4px 12px',
+                        borderRadius: '6px',
+                        borderColor: '#ff6b35'
+                      }}>
+                        {stockValue}
+                      </Tag>
+                    );
+                  },
+                },
+                {
+                  title: 'Stock Trendyol',
+                  dataIndex: 'sku',
+                  key: 'stock_trendyol',
+                  width: '12%',
+                  align: 'center',
+                  render: (sku) => {
+                    if (loadingStock) {
+                      return <Tag color="blue">Loading...</Tag>;
+                    }
+                    const stockInfo = trendyolStock[sku];
+                    if (!stockInfo) {
+                      return <Tag color="gray">-</Tag>;
+                    }
+                    const stockValue = stockInfo.stock || 0;
+                    const stockColor = stockValue > 10 ? '#52c41a' : stockValue > 0 ? '#faad14' : '#f5222d';
+                    return (
+                      <Tag color={stockColor} style={{ 
+                        fontWeight: 'bold', 
+                        fontSize: '14px',
+                        padding: '4px 12px',
+                        borderRadius: '6px',
+                        borderColor: '#00d4ff'
                       }}>
                         {stockValue}
                       </Tag>
