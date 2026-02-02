@@ -618,45 +618,47 @@ export default function OrdersPage() {
           flexWrap: 'wrap'
         }}>
           <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>Show:</span>
-          {credentials.map(cred => {
-            // Pentru Trendyol, afișăm doar toggle-uri separate pentru fiecare țară (fără butonul principal)
-            if (cred.platform === 2) {
-              const trendyolMarketplaces = ['TRENDYOL RO', 'TRENDYOL GR', 'TRENDYOL BG'];
+          {credentials
+            .filter(cred => cred.platform !== 3) // Excludem Oblio (platform 3) - este pentru facturi, nu comenzi
+            .map(cred => {
+              // Pentru Trendyol, afișăm doar toggle-uri separate pentru fiecare țară (fără butonul principal)
+              if (cred.platform === 2) {
+                const trendyolMarketplaces = ['TRENDYOL RO', 'TRENDYOL GR', 'TRENDYOL BG'];
+                return (
+                  <React.Fragment key={cred.id}>
+                    {trendyolMarketplaces.map(marketplace => {
+                      const marketplaceColor = getMarketplaceColor(marketplace);
+                      const marketplaceEnabled = trendyolMarketplaceToggles[marketplace] !== false;
+                      return (
+                        <div key={marketplace} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '12px', color: marketplaceColor, fontWeight: 500 }}>{marketplace}</span>
+                          <Switch 
+                            size="small"
+                            checked={marketplaceEnabled}
+                            onChange={(checked) => updateTrendyolMarketplaceToggle(marketplace, checked)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              }
+              
+              // Pentru celelalte platforme, afișăm toggle normal
+              const displayName = getCredentialDisplayName(cred);
+              const color = getCredentialColor(cred);
+              const isEnabled = credentialToggles[cred.id] !== false;
               return (
-                <React.Fragment key={cred.id}>
-                  {trendyolMarketplaces.map(marketplace => {
-                    const marketplaceColor = getMarketplaceColor(marketplace);
-                    const marketplaceEnabled = trendyolMarketplaceToggles[marketplace] !== false;
-                    return (
-                      <div key={marketplace} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '12px', color: marketplaceColor, fontWeight: 500 }}>{marketplace}</span>
-                        <Switch 
-                          size="small"
-                          checked={marketplaceEnabled}
-                          onChange={(checked) => updateTrendyolMarketplaceToggle(marketplace, checked)}
-                        />
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
+                <div key={cred.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '12px', color: color, fontWeight: 500 }}>{displayName}</span>
+                  <Switch 
+                    size="small"
+                    checked={isEnabled}
+                    onChange={(checked) => updateCredentialToggle(cred.id, checked)}
+                  />
+                </div>
               );
-            }
-            
-            // Pentru celelalte platforme, afișăm toggle normal
-            const displayName = getCredentialDisplayName(cred);
-            const color = getCredentialColor(cred);
-            const isEnabled = credentialToggles[cred.id] !== false;
-            return (
-              <div key={cred.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '12px', color: color, fontWeight: 500 }}>{displayName}</span>
-                <Switch 
-                  size="small"
-                  checked={isEnabled}
-                  onChange={(checked) => updateCredentialToggle(cred.id, checked)}
-                />
-              </div>
-            );
-          })}
+            })}
         </div>
       )}
       <Tooltip title={autoRefreshEnabled ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}>
