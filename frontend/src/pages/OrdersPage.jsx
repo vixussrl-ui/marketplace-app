@@ -994,6 +994,23 @@ export default function OrdersPage() {
                       return <Tag color="blue">Loading...</Tag>;
                     }
                     const stockInfo = trendyolStock[sku];
+                    // Verificăm dacă API-ul este indisponibil
+                    const apiUnavailable = trendyolStock['_api_status'] === 'unavailable';
+                    
+                    if (apiUnavailable || (stockInfo && stockInfo.stock === -1)) {
+                      return (
+                        <Tooltip title="API Trendyol Products nu este accesibil. Verifică IP whitelist sau permisiuni.">
+                          <Tag color="orange" style={{ 
+                            fontWeight: 'bold', 
+                            fontSize: '12px',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                          }}>
+                            N/A
+                          </Tag>
+                        </Tooltip>
+                      );
+                    }
                     if (!stockInfo) {
                       return <Tag color="gray">-</Tag>;
                     }
