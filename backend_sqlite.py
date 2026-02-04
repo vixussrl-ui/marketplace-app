@@ -566,17 +566,18 @@ class TrendyolClient:
 
     async def fetch_product_stock(self, sku):
         """
-        Preluează stocul unui produs de pe Trendyol folosind SKU (merchantSku)
+        Preluează stocul unui produs de pe Trendyol folosind SKU (merchantSku/stockCode)
         Conform documentației Trendyol: https://developers.trendyol.com/
-        Folosim endpoint-ul /integration/product/sellers care este similar cu cel de orders
+        
+        API Trendyol International folosește: https://api.trendyol.com/sapigw/suppliers/{sellerId}/products
+        cu parametrul stockCode pentru filtrare
         """
         try:
-            # Încercăm mai multe endpoint-uri în ordine de preferință
-            endpoints = [
-                # Endpoint principal - integration (similar cu orders)
-                f"{self.base_url}/integration/product/sellers/{self.supplier_id}/products",
-                # Endpoint alternativ sapigw
-                f"{self.base_url}/sapigw/suppliers/{self.supplier_id}/products",
+            # Trendyol International folosește api.trendyol.com (nu apigw.trendyol.com)
+            # Conform documentației: https://developers.trendyol.com/
+            base_urls = [
+                "https://api.trendyol.com",
+                "https://apigw.trendyol.com",
             ]
             
             headers = {
@@ -585,25 +586,32 @@ class TrendyolClient:
                 "User-Agent": f"{self.supplier_id} - SelfIntegration",
             }
             
-            for url in endpoints:
+            for base_url in base_urls:
+                url = f"{base_url}/sapigw/suppliers/{self.supplier_id}/products"
                 params = {
                     "stockCode": sku,
                     "page": 0,
-                    "size": 1,
+                    "size": 10,
+                    "approved": True,
                 }
                 
-                print(f"[TRENDYOL] Trying endpoint: {url} for SKU: {sku}")
+                print(f"[TRENDYOL] Trying: {url} for SKU: {sku}")
                 
                 try:
                     async with httpx.AsyncClient(timeout=30.0) as client:
                         response = await client.get(url, headers=headers, params=params)
                         
+                        print(f"[TRENDYOL] Response from {base_url}: {response.status_code}")
+                        
                         if response.status_code == 200:
                             data = response.json()
                             content = data.get("content", [])
+                            print(f"[TRENDYOL DEBUG] Got {len(content)} products from {base_url}")
+                            
                             if content and len(content) > 0:
                                 product = content[0]
                                 print(f"[TRENDYOL DEBUG] Product keys: {list(product.keys())}")
+                                # Câmpul principal pentru stoc în Trendyol este "quantity"
                                 stock = (product.get("quantity") or 
                                         product.get("stockQuantity") or 
                                         product.get("stock") or
@@ -611,16 +619,16 @@ class TrendyolClient:
                                 print(f"[TRENDYOL] Found stock: {stock} for SKU: {sku}")
                                 return int(stock) if stock else 0
                         elif response.status_code in [556, 503, 429]:
-                            print(f"[TRENDYOL] Endpoint {url} returned {response.status_code}, trying next...")
+                            print(f"[TRENDYOL] Rate limited on {base_url}, trying next...")
                             continue
                         else:
-                            print(f"[TRENDYOL] Endpoint {url} returned {response.status_code}")
+                            print(f"[TRENDYOL] Error {response.status_code}: {response.text[:200] if response.text else ''}")
                 except Exception as e:
-                    print(f"[TRENDYOL] Error with endpoint {url}: {e}")
+                    print(f"[TRENDYOL] Exception with {base_url}: {e}")
                     continue
             
-            # Dacă niciun endpoint nu a funcționat, încercăm să obținem toate produsele
-            print(f"[TRENDYOL] All endpoints failed for SKU: {sku}, trying batch fetch...")
+            # Dacă filtrul cu stockCode nu funcționează, încercăm batch fetch
+            print(f"[TRENDYOL] Filter failed for SKU: {sku}, trying batch fetch...")
             return await self._fetch_stock_from_all_products(sku)
             
         except Exception as e:
@@ -632,14 +640,13 @@ class TrendyolClient:
     async def _fetch_stock_from_all_products(self, sku):
         """
         Metodă alternativă: preia toate produsele și caută după SKU
-        Această metodă este mai lentă dar poate funcționa când endpoint-urile cu filtru nu merg
+        Folosește api.trendyol.com pentru International marketplace
         """
         try:
-            url = f"{self.base_url}/integration/product/sellers/{self.supplier_id}/products"
-            params = {
-                "page": 0,
-                "size": 500,  # Preluăm mai multe produse
-            }
+            base_urls = [
+                "https://api.trendyol.com",
+                "https://apigw.trendyol.com",
+            ]
             
             headers = {
                 "Authorization": self._get_auth_header(),
@@ -647,30 +654,43 @@ class TrendyolClient:
                 "User-Agent": f"{self.supplier_id} - SelfIntegration",
             }
             
-            print(f"[TRENDYOL] Batch fetching all products to find SKU: {sku}")
+            for base_url in base_urls:
+                url = f"{base_url}/sapigw/suppliers/{self.supplier_id}/products"
+                params = {
+                    "page": 0,
+                    "size": 500,
+                    "approved": True,
+                }
+                
+                print(f"[TRENDYOL] Batch fetch from {base_url} for SKU: {sku}")
+                
+                try:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        response = await client.get(url, headers=headers, params=params)
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            content = data.get("content", [])
+                            print(f"[TRENDYOL] Got {len(content)} products from batch fetch ({base_url})")
+                            
+                            # Căutăm produsul cu SKU-ul dat
+                            for product in content:
+                                product_sku = product.get("stockCode") or product.get("merchantSku") or ""
+                                if product_sku.lower() == sku.lower():
+                                    stock = product.get("quantity") or product.get("stockQuantity") or 0
+                                    print(f"[TRENDYOL] Found stock via batch: {stock} for SKU: {sku}")
+                                    return int(stock) if stock else 0
+                        elif response.status_code in [556, 503, 429]:
+                            print(f"[TRENDYOL] Batch rate limited on {base_url}")
+                            continue
+                        else:
+                            print(f"[TRENDYOL] Batch error {response.status_code}")
+                except Exception as e:
+                    print(f"[TRENDYOL] Batch exception with {base_url}: {e}")
+                    continue
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.get(url, headers=headers, params=params)
-                
-                if response.status_code != 200:
-                    print(f"[TRENDYOL] Batch endpoint failed: {response.status_code}, {response.text[:200] if response.text else ''}")
-                    return 0
-                
-                data = response.json()
-                content = data.get("content", [])
-                
-                print(f"[TRENDYOL] Got {len(content)} products from batch fetch")
-                
-                # Căutăm produsul cu SKU-ul dat
-                for product in content:
-                    product_sku = product.get("stockCode") or product.get("merchantSku") or ""
-                    if product_sku.lower() == sku.lower():
-                        stock = product.get("quantity") or product.get("stockQuantity") or 0
-                        print(f"[TRENDYOL] Found stock via batch: {stock} for SKU: {sku}")
-                        return int(stock) if stock else 0
-                
-                print(f"[TRENDYOL] Product not found in batch for SKU: {sku}")
-                return 0
+            print(f"[TRENDYOL] Product not found for SKU: {sku}")
+            return 0
         except Exception as e:
             print(f"[ERROR] Error in batch Trendyol stock fetch: {e}")
             return 0
