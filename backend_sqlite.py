@@ -1345,6 +1345,10 @@ async def refresh_orders(request: Request):
                 import traceback
                 traceback.print_exc()
                 new_orders = []
+        elif platform == 3:
+            # Oblio - nu are comenzi, este doar pentru facturi/stocuri
+            print(f"[REFRESH] Platform 3 (Oblio) does not support orders - skipping")
+            return {"message": "Oblio does not support orders", "orders_count": 0}
         else:
             print(f"[REFRESH] Unknown platform: {platform}")
             raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
