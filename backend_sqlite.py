@@ -565,14 +565,21 @@ class TrendyolClient:
             return str(timestamp_ms)
 
     async def fetch_product_stock(self, sku):
-        """Preluează stocul unui produs de pe Trendyol folosind SKU (merchantSku)"""
+        """
+        Preluează stocul unui produs de pe Trendyol folosind SKU (merchantSku)
+        Conform documentației Trendyol: https://developers.trendyol.com/
+        Endpoint: GET /sapigw/suppliers/{supplierId}/products
+        """
         try:
-            # Trendyol folosește endpoint-ul pentru products cu filtru merchantSku
-            url = f"{self.base_url}/suppliers/{self.supplier_id}/v2/products"
+            # Conform documentației Trendyol, endpoint-ul corect este:
+            # GET https://api.trendyol.com/sapigw/suppliers/{supplierId}/products?barcode={barcode}
+            # sau cu filtru merchantSku
+            url = f"{self.base_url}/sapigw/suppliers/{self.supplier_id}/products"
             params = {
-                "merchantSku": sku,
+                "stockCode": sku,  # Trendyol folosește stockCode (merchantSku)
                 "page": 0,
-                "size": 1
+                "size": 1,
+                "approved": "true"  # Doar produsele aprobate
             }
             
             headers = {
@@ -581,7 +588,7 @@ class TrendyolClient:
                 "User-Agent": f"{self.supplier_id} - SelfIntegration",
             }
             
-            print(f"[TRENDYOL] Fetching stock for SKU: {sku}")
+            print(f"[TRENDYOL] Fetching stock for SKU: {sku} from {url}")
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url, headers=headers, params=params)
@@ -590,8 +597,13 @@ class TrendyolClient:
                     print(f"[TRENDYOL] Product not found for SKU: {sku}")
                     return 0
                 
+                if response.status_code == 556 or response.status_code == 503 or response.status_code == 429:
+                    # Rate limiting sau service unavailable - încercăm endpoint-ul alternativ
+                    print(f"[TRENDYOL] Service unavailable ({response.status_code}), trying alternative endpoint...")
+                    return await self._fetch_stock_from_inventory_endpoint(sku)
+                
                 if response.status_code != 200:
-                    print(f"[TRENDYOL] Error response: {response.status_code}, {response.text}")
+                    print(f"[TRENDYOL] Error response: {response.status_code}, {response.text[:200]}")
                     return 0
                 
                 data = response.json()
@@ -600,35 +612,16 @@ class TrendyolClient:
                 content = data.get("content", [])
                 if content and len(content) > 0:
                     product = content[0]
-                    # Conform documentației Trendyol, stocul poate fi în diferite câmpuri
-                    # Vom verifica mai multe câmpuri posibile și vom loga răspunsul pentru debugging
-                    print(f"[TRENDYOL DEBUG] Product response keys: {list(product.keys())}")
-                    print(f"[TRENDYOL DEBUG] Full product data for {sku}: {str(product)[:500]}")  # Limitează la 500 caractere
+                    # Conform documentației Trendyol, câmpul pentru stoc este "quantity"
+                    print(f"[TRENDYOL DEBUG] Product keys: {list(product.keys())}")
                     
-                    # Câmpuri posibile pentru stoc în Trendyol API
-                    # Conform documentației, stocul poate fi în:
-                    # - stockQuantity (cel mai probabil)
-                    # - quantity
-                    # - availableQuantity
-                    # - inventory (poate fi un obiect)
-                    stock = None
-                    
-                    # Verificăm dacă există un câmp inventory (poate fi un obiect)
-                    inventory = product.get("inventory")
-                    if inventory:
-                        if isinstance(inventory, dict):
-                            stock = inventory.get("quantity") or inventory.get("availableQuantity") or inventory.get("stockQuantity") or inventory.get("totalQuantity")
-                        elif isinstance(inventory, (int, float)):
-                            stock = inventory
-                    
-                    # Dacă nu am găsit în inventory, verificăm direct pe product
-                    if stock is None:
-                        stock = (product.get("stockQuantity") or 
-                                product.get("quantity") or 
-                                product.get("availableQuantity") or 
-                                product.get("stock") or
-                                product.get("availableStock") or
-                                0)
+                    # Câmpuri posibile pentru stoc în Trendyol API (din documentație):
+                    # - quantity (principal)
+                    # - stockQuantity 
+                    stock = (product.get("quantity") or 
+                            product.get("stockQuantity") or 
+                            product.get("stock") or
+                            0)
                     
                     print(f"[TRENDYOL] Found stock: {stock} for SKU: {sku}")
                     return int(stock) if stock else 0
@@ -639,6 +632,51 @@ class TrendyolClient:
             print(f"[ERROR] Error fetching Trendyol product stock: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
+            return 0
+    
+    async def _fetch_stock_from_inventory_endpoint(self, sku):
+        """
+        Metodă alternativă pentru a prelua stocul folosind endpoint-ul de inventory
+        Conform documentației Trendyol: POST /sapigw/suppliers/{supplierId}/products/price-and-inventory
+        """
+        try:
+            # Încercăm să obținem informații din endpoint-ul alternativ
+            url = f"{self.base_url}/sapigw/suppliers/{self.supplier_id}/products"
+            params = {
+                "approved": "true",
+                "page": 0,
+                "size": 100
+            }
+            
+            headers = {
+                "Authorization": self._get_auth_header(),
+                "Content-Type": "application/json",
+                "User-Agent": f"{self.supplier_id} - SelfIntegration",
+            }
+            
+            print(f"[TRENDYOL] Trying alternative products endpoint for SKU: {sku}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, headers=headers, params=params)
+                
+                if response.status_code != 200:
+                    print(f"[TRENDYOL] Alternative endpoint also failed: {response.status_code}")
+                    return 0
+                
+                data = response.json()
+                content = data.get("content", [])
+                
+                # Căutăm produsul cu SKU-ul dat
+                for product in content:
+                    if product.get("stockCode") == sku or product.get("merchantSku") == sku:
+                        stock = product.get("quantity") or product.get("stockQuantity") or 0
+                        print(f"[TRENDYOL] Found stock via alternative: {stock} for SKU: {sku}")
+                        return int(stock) if stock else 0
+                
+                print(f"[TRENDYOL] Product not found in alternative endpoint for SKU: {sku}")
+                return 0
+        except Exception as e:
+            print(f"[ERROR] Error in alternative Trendyol stock fetch: {e}")
             return 0
 
     async def fetch_products_stock(self, product_codes=None):
