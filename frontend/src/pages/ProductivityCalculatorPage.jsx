@@ -428,6 +428,7 @@ export default function ProductivityCalculatorPage() {
     
     let successCount = 0;
     let errorCount = 0;
+    const priceUpdates = {}; // key -> price
     
     try {
       // Fetch prices pentru toate produsele în paralel
@@ -436,7 +437,7 @@ export default function ProductivityCalculatorPage() {
           const response = await emagAPI.getProductPrice(product.sku, emagRomaniaCredential);
           const price = response.data.price;
           if (price !== null && price !== undefined) {
-            handleCellChange(product.key, 'pretEmag', price);
+            priceUpdates[product.key] = price;
             successCount++;
           } else {
             errorCount++;
@@ -448,6 +449,16 @@ export default function ProductivityCalculatorPage() {
       });
       
       await Promise.all(promises);
+      
+      // Actualizăm direct toate produsele cu prețurile noi (fără a depinde de editingKey)
+      if (Object.keys(priceUpdates).length > 0) {
+        setProducts(prev => prev.map(item => {
+          if (priceUpdates[item.key] !== undefined) {
+            return { ...item, pretEmag: priceUpdates[item.key] };
+          }
+          return item;
+        }));
+      }
       
       hide();
       
@@ -473,7 +484,7 @@ export default function ProductivityCalculatorPage() {
         duration: 5
       });
     }
-  }, [emagRomaniaCredential, products, handleCellChange]);
+  }, [emagRomaniaCredential, products]);
 
   const deleteRow = useCallback((key) => {
     setProducts(prev => prev.filter(item => item.key !== key));
