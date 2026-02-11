@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, Table, Button, Space, Select, message, Tag, Tabs, Switch, Tooltip } from 'antd';
-import { ReloadOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { ReloadOutlined, ClockCircleOutlined, SelectOutlined } from '@ant-design/icons';
 import { ordersAPI, credentialsAPI, API_BASE_URL } from '../api';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
@@ -327,7 +327,8 @@ export default function OrdersPage() {
     }
   };
 
-  const handleOpenOrder = (record) => {
+  // Helper: generează URL-ul pentru o comandă specifică
+  const getOrderUrl = (record) => {
     const orderId = record.platform_order_id || record.order_id;
     const vendorCode = record.vendor_code || '';
     const orderType = record.order_type || 3;
@@ -337,11 +338,7 @@ export default function OrdersPage() {
 
     // Trendyol: open partner page by country
     if (marketplace.startsWith('TRENDYOL')) {
-      // Folosim exact aceeași logică de detecție ca la etichetare:
-      // 1) vendor_code: trendyol_gr / trendyol_ro
-      // 2) fallback pe textul marketplace-ului (TRENDYOL GR / TRENDYOL RO)
       let country = 'ro';
-
       if (vendorCodeLower.includes('trendyol_gr')) {
         country = 'gr';
       } else if (vendorCodeLower.includes('trendyol_bg')) {
@@ -349,33 +346,68 @@ export default function OrdersPage() {
       } else if (vendorCodeLower.includes('trendyol_ro')) {
         country = 'ro';
       } else if (marketplace.includes('GR')) {
-        // Match any variant containing GR (e.g. 'TRENDYOL GR', 'TRENDYOL_GR', etc.)
         country = 'gr';
       } else if (marketplace.includes('BG')) {
         country = 'bg';
       } else if (marketplace.includes('RO')) {
         country = 'ro';
       }
-
-      const url = `https://partner.trendyol.com/${country}/orders/shipment-packages/created`;
-      window.open(url, '_blank');
-      return;
+      return `https://partner.trendyol.com/${country}/orders/shipment-packages/created`;
     }
 
     // eMAG: open vendor details by country TLD
     if (marketplace.startsWith('EMAG')) {
-      let domain = 'ro'; // default
+      let domain = 'ro';
       if (marketplace === 'EMAG HU') {
         domain = 'hu';
       } else if (marketplace === 'EMAG BG') {
         domain = 'bg';
       }
-      const url = `https://marketplace.emag.${domain}/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
-    window.open(url, '_blank');
+      return `https://marketplace.emag.${domain}/order/vendor_details/${orderId}/${vendorCode}/${orderType}?openAwbModal=0`;
+    }
+
+    return null;
+  };
+
+  const handleOpenOrder = (record) => {
+    const url = getOrderUrl(record);
+    if (url) {
+      window.open(url, '_blank');
+    }
+  };
+
+  // Deschide toate comenzile vizibile (filtrate) în tab-uri noi
+  const handleOpenAllOrders = () => {
+    if (filteredOrders.length === 0) {
+      message.warning('No orders to open');
       return;
     }
 
-    // Other platforms: do nothing (avoid opening wrong marketplace)
+    // Generăm URL-uri unice (Trendyol are același URL per țară, nu duplicăm)
+    const uniqueUrls = new Set();
+    const urlList = [];
+
+    for (const order of filteredOrders) {
+      const url = getOrderUrl(order);
+      if (url && !uniqueUrls.has(url)) {
+        uniqueUrls.add(url);
+        urlList.push(url);
+      }
+    }
+
+    if (urlList.length === 0) {
+      message.warning('No links available for these orders');
+      return;
+    }
+
+    // Avertisment dacă sunt multe tab-uri
+    if (urlList.length > 20) {
+      const confirmed = window.confirm(`This will open ${urlList.length} tabs. Continue?`);
+      if (!confirmed) return;
+    }
+
+    urlList.forEach(url => window.open(url, '_blank'));
+    message.success(`Opened ${urlList.length} order link(s)`);
   };
 
   const handleRefresh = async () => {
@@ -650,6 +682,16 @@ export default function OrdersPage() {
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Tooltip title={`Open all ${filteredOrders.length} visible orders in new tabs`}>
+          <Button
+            icon={<SelectOutlined />}
+            onClick={handleOpenAllOrders}
+            disabled={filteredOrders.length === 0}
+            style={theme.BUTTON_STYLES.secondary}
+          >
+            Open All ({filteredOrders.length})
+          </Button>
+        </Tooltip>
         <Button
           icon={<ReloadOutlined />}
           onClick={handleRefresh}
