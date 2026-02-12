@@ -345,6 +345,15 @@ export default function ProductivityCalculatorPage() {
     if (editingKey === recordKey) {
       setProducts(prev => prev.map(item => {
         if (item.key === recordKey) {
+          // Dacă editezi Object (productName) și pui ceva în paranteze => edit de SKU
+          if (dataIndex === 'productName' && typeof value === 'string') {
+            const match = value.match(/^(.*?)\s*\((.+)\)\s*$/);
+            if (match) {
+              const newName = match[1].trim();
+              const newSku = match[2].trim();
+              return { ...item, productName: newName, sku: newSku };
+            }
+          }
           return { ...item, [dataIndex]: value };
         }
         return item;
