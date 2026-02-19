@@ -45,6 +45,10 @@ export const ordersAPI = {
 
 export const emagAPI = {
   getProductPrice: (sku, credentialId) => api.post('/emag/product/price', { sku, credential_id: credentialId }),
+  getOrderDetails: (orderId, credentialId) => api.post('/emag/order/details', { order_id: orderId, credential_id: credentialId }),
+  getCourierAccounts: (credentialId) => api.get(`/emag/courier-accounts/${credentialId}`),
+  getAddresses: (credentialId) => api.get(`/emag/addresses/${credentialId}`),
+  generateAwb: (orderId, credentialId, awbData) => api.post('/emag/awb/generate', { order_id: orderId, credential_id: credentialId, awb_data: awbData }),
 };
 
 export const calculatorAPI = {

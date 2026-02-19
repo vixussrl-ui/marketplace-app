@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Card, Table, Button, Space, Select, message, Tag, Tabs, Switch, Tooltip } from 'antd';
-import { ReloadOutlined, ClockCircleOutlined, SelectOutlined } from '@ant-design/icons';
-import { ordersAPI, credentialsAPI, API_BASE_URL } from '../api';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Card, Table, Button, Space, Select, message, Tag, Tabs, Switch, Tooltip, Modal, Form, InputNumber, Input, Spin, Descriptions, Divider, Alert } from 'antd';
+import { ReloadOutlined, ClockCircleOutlined, SelectOutlined, FileTextOutlined, SendOutlined, CheckCircleOutlined, LoadingOutlined } from '@ant-design/icons';
+import { ordersAPI, credentialsAPI, emagAPI, API_BASE_URL } from '../api';
 import MainLayout from '../components/MainLayout';
 import * as theme from '../theme/constants';
 
@@ -25,6 +25,16 @@ export default function OrdersPage() {
   });
   
   const refreshInFlightRef = useRef(false);
+
+  // AWB Modal state
+  const [awbModalVisible, setAwbModalVisible] = useState(false);
+  const [awbModalLoading, setAwbModalLoading] = useState(false);
+  const [awbGenerating, setAwbGenerating] = useState(false);
+  const [awbOrderRecord, setAwbOrderRecord] = useState(null);
+  const [awbOrderDetails, setAwbOrderDetails] = useState(null);
+  const [awbCourierAccounts, setAwbCourierAccounts] = useState([]);
+  const [awbAddresses, setAwbAddresses] = useState([]);
+  const [awbForm] = Form.useForm();
 
   const userId = localStorage.getItem('user_id');
   
@@ -436,6 +446,219 @@ export default function OrdersPage() {
     }
   };
 
+  // === AWB Generation handlers ===
+  const handleOpenAwbModal = useCallback(async (record) => {
+    // Doar pentru comenzi eMAG
+    const marketplace = (record.marketplace || '').toUpperCase();
+    if (!marketplace.startsWith('EMAG')) {
+      message.warning('AWB generation is only available for eMAG orders');
+      return;
+    }
+
+    setAwbOrderRecord(record);
+    setAwbModalVisible(true);
+    setAwbModalLoading(true);
+    setAwbOrderDetails(null);
+    setAwbCourierAccounts([]);
+    setAwbAddresses([]);
+    awbForm.resetFields();
+
+    const credentialId = record.credentialId;
+    const orderId = record.platform_order_id;
+
+    try {
+      // Fetch all needed data in parallel
+      const [orderRes, courierRes, addressRes] = await Promise.all([
+        emagAPI.getOrderDetails(orderId, credentialId),
+        emagAPI.getCourierAccounts(credentialId),
+        emagAPI.getAddresses(credentialId),
+      ]);
+
+      const order = orderRes.data?.order;
+      const courierAccounts = courierRes.data?.courier_accounts || [];
+      const addresses = addressRes.data?.addresses || [];
+
+      setAwbOrderDetails(order);
+      setAwbCourierAccounts(courierAccounts);
+      setAwbAddresses(addresses);
+
+      if (!order) {
+        message.error('Could not fetch order details from eMAG');
+        return;
+      }
+
+      // Calculăm COD (ramburs) - dacă payment_mode_id este cash/COD
+      // eMAG payment modes: 1 = ramburs/COD, 7 = online card
+      const paymentModeId = order.payment_mode_id;
+      const isCod = paymentModeId === 1;
+      
+      // Calculăm totalul comenzii (cu TVA)
+      let totalCod = 0;
+      if (isCod) {
+        const products = order.products || [];
+        for (const p of products) {
+          if (p.status === 1) { // Doar produse active
+            const salePrice = parseFloat(p.sale_price || 0);
+            const qty = parseInt(p.quantity || 0);
+            const vatRate = parseFloat(p.vat_rate || 0.19);
+            totalCod += salePrice * qty * (1 + vatRate);
+          }
+        }
+        // Adăugăm shipping tax dacă există
+        const shippingTax = parseFloat(order.shipping_tax || 0);
+        totalCod += shippingTax;
+        totalCod = Math.round(totalCod * 100) / 100;
+      }
+
+      // Căutăm adresa de pickup default
+      const defaultPickupAddress = addresses.find(a => a.address_type_id === 2 && a.is_default) 
+        || addresses.find(a => a.address_type_id === 2) 
+        || addresses[0];
+
+      // Determinăm currency bazat pe marketplace
+      let currency = 'RON';
+      if (marketplace.includes('BG')) currency = 'EUR';
+      else if (marketplace.includes('HU')) currency = 'HUF';
+
+      // Default courier account
+      const defaultCourier = courierAccounts.length > 0 ? courierAccounts[0] : null;
+
+      // Pre-fill form
+      awbForm.setFieldsValue({
+        parcel_number: 1,
+        envelope_number: 0,
+        weight: 1,
+        is_oversize: 0,
+        cod: totalCod,
+        currency: currency,
+        observation: '',
+        courier_account_id: defaultCourier?.courier_account_id || undefined,
+        pickup_and_return: 0,
+        saturday_delivery: 0,
+        sameday_delivery: 0,
+        dropoff_locker: 0,
+        // Sender (from seller address)
+        sender_name: defaultPickupAddress?.address || '',
+        sender_address_id: defaultPickupAddress?.address_id || undefined,
+        // Receiver (from order customer)
+        receiver_name: order.customer?.name || '',
+        receiver_phone: order.customer?.shipping_phone || order.customer?.phone_1 || '',
+        receiver_locality_id: order.shipping_locality_id || order.customer?.billing_locality_id || '',
+      });
+
+    } catch (error) {
+      console.error('Error loading AWB data:', error);
+      message.error('Failed to load order details: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setAwbModalLoading(false);
+    }
+  }, [awbForm]);
+
+  const handleGenerateAwb = useCallback(async () => {
+    try {
+      const values = await awbForm.validateFields();
+      const record = awbOrderRecord;
+      const order = awbOrderDetails;
+      
+      if (!record || !order) {
+        message.error('Missing order data');
+        return;
+      }
+
+      setAwbGenerating(true);
+
+      const customer = order.customer || {};
+      
+      // Construim sender din address_id (dacă avem) sau din adresa default
+      const senderData = {};
+      if (values.sender_address_id) {
+        const addr = awbAddresses.find(a => String(a.address_id) === String(values.sender_address_id));
+        senderData.address_id = String(values.sender_address_id);
+        senderData.name = addr?.city ? `${addr.suburb || ''}, ${addr.city}`.trim() : (customer.name || 'Seller');
+        senderData.contact = customer.name || 'Seller';
+        senderData.phone1 = customer.phone_1 || '0000000000';
+        senderData.locality_id = addr?.locality_id || 1;
+        senderData.street = addr?.address || 'N/A';
+      } else {
+        // Fallback - use first available address info
+        const addr = awbAddresses[0] || {};
+        senderData.name = addr?.city ? `${addr.suburb || ''}, ${addr.city}`.trim() : 'Seller';
+        senderData.contact = 'Seller';
+        senderData.phone1 = '0000000000';
+        senderData.locality_id = addr?.locality_id || 1;
+        senderData.street = addr?.address || 'N/A';
+      }
+
+      // Construim receiver din datele comenzii
+      const receiverData = {
+        name: customer.name || 'Customer',
+        contact: customer.shipping_contact || customer.name || 'Customer',
+        phone1: (customer.shipping_phone || customer.phone_1 || '').replace(/[^0-9+]/g, ''),
+        locality_id: parseInt(order.shipping_locality_id) || parseInt(customer.billing_locality_id) || 1,
+        street: customer.billing_street || 'N/A',
+        legal_entity: customer.legal_entity || 0,
+      };
+
+      // Verificăm locker delivery
+      const shippingStreet = customer.billing_street || '';
+      const lockerId = order.locker_id || '';
+
+      const awbPayload = {
+        order_id: parseInt(record.platform_order_id),
+        sender: senderData,
+        receiver: receiverData,
+        is_oversize: values.is_oversize || 0,
+        weight: values.weight || 1,
+        envelope_number: values.envelope_number || 0,
+        parcel_number: values.parcel_number || 1,
+        cod: values.cod || 0,
+        observation: values.observation || '',
+        pickup_and_return: values.pickup_and_return || 0,
+        saturday_delivery: values.saturday_delivery || 0,
+        sameday_delivery: values.sameday_delivery || 0,
+        dropoff_locker: values.dropoff_locker || 0,
+      };
+
+      if (values.courier_account_id) {
+        awbPayload.courier_account_id = parseInt(values.courier_account_id);
+      }
+      if (values.currency) {
+        awbPayload.currency = values.currency;
+      }
+      if (lockerId) {
+        awbPayload.locker_id = lockerId;
+      }
+
+      console.log('[AWB] Generating AWB with payload:', awbPayload);
+
+      const res = await emagAPI.generateAwb(
+        record.platform_order_id,
+        record.credentialId,
+        awbPayload
+      );
+
+      if (res.data?.success) {
+        message.success(`AWB generat cu succes pentru comanda ${record.platform_order_id}!`);
+        setAwbModalVisible(false);
+        // Refresh orders to reflect status change
+        await handleRefresh();
+      } else {
+        const errorMsg = res.data?.error;
+        const errorStr = Array.isArray(errorMsg) ? errorMsg.join(', ') : (typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+        message.error(`Eroare la generare AWB: ${errorStr}`);
+      }
+    } catch (error) {
+      if (error.errorFields) {
+        message.warning('Please fill in all required fields');
+        return;
+      }
+      console.error('AWB generation error:', error);
+      message.error('Failed to generate AWB: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setAwbGenerating(false);
+    }
+  }, [awbForm, awbOrderRecord, awbOrderDetails, awbAddresses, handleRefresh]);
+
   const columns = [
     {
       title: 'Order ID',
@@ -483,9 +706,9 @@ export default function OrdersPage() {
     {
       title: 'Products',
       key: 'items',
-      width: 700,
+      width: 550,
       render: (_, record) => (
-        <div style={{ maxWidth: 680 }}>
+        <div style={{ maxWidth: 530 }}>
           {record.items?.map((item, idx) => (
             <div
               key={idx}
@@ -521,6 +744,43 @@ export default function OrdersPage() {
           ))}
         </div>
       ),
+    },
+    {
+      title: 'AWB',
+      key: 'awb_action',
+      width: 100,
+      align: 'center',
+      render: (_, record) => {
+        const marketplace = (record.marketplace || '').toUpperCase();
+        const isEmag = marketplace.startsWith('EMAG');
+        
+        if (!isEmag) {
+          return <Tag color="default" style={{ fontSize: '11px' }}>N/A</Tag>;
+        }
+        
+        return (
+          <Tooltip title="Generate AWB">
+            <Button
+              type="primary"
+              size="small"
+              icon={<SendOutlined />}
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent row click
+                handleOpenAwbModal(record);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 'bold',
+                fontSize: '12px',
+              }}
+            >
+              AWB
+            </Button>
+          </Tooltip>
+        );
+      },
     },
   ];
 
@@ -777,12 +1037,16 @@ export default function OrdersPage() {
                 showTotal: (total) => `Total ${total} orders`
               }}
               onRow={(record) => ({
-                onClick: () => handleOpenOrder(record),
+                onClick: (e) => {
+                  // Don't open order if clicking on a button
+                  if (e.target.closest('button') || e.target.closest('.ant-btn')) return;
+                  handleOpenOrder(record);
+                },
                 ...theme.TABLE_CONFIG.rowProps(true)
               })}
               style={theme.TABLE_CONFIG.tableStyle}
               rowClassName={() => theme.TABLE_CONFIG.rowClassName}
-              scroll={{ x: 900 }}
+              scroll={{ x: 1100 }}
             />
           </Card>
         </Tabs.TabPane>
@@ -983,6 +1247,216 @@ export default function OrdersPage() {
         </Tabs.TabPane>
         </Tabs>
       </div>
+      {/* AWB Generation Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <FileTextOutlined style={{ color: '#10b981', fontSize: '20px' }} />
+            <span>Generate AWB - Order #{awbOrderRecord?.platform_order_id}</span>
+          </div>
+        }
+        open={awbModalVisible}
+        onCancel={() => { setAwbModalVisible(false); setAwbOrderRecord(null); }}
+        width={700}
+        footer={
+          awbModalLoading ? null : [
+            <Button key="cancel" onClick={() => setAwbModalVisible(false)}>
+              Cancel
+            </Button>,
+            <Button
+              key="generate"
+              type="primary"
+              icon={<SendOutlined />}
+              loading={awbGenerating}
+              onClick={handleGenerateAwb}
+              style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                border: 'none',
+                fontWeight: 'bold',
+              }}
+            >
+              Generate AWB
+            </Button>
+          ]
+        }
+      >
+        {awbModalLoading ? (
+          <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <Spin indicator={<LoadingOutlined style={{ fontSize: 36 }} spin />} />
+            <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading order details from eMAG...</p>
+          </div>
+        ) : !awbOrderDetails ? (
+          <Alert type="error" message="Could not load order details. Please try again." showIcon />
+        ) : (
+          <>
+            {/* Order Summary */}
+            <Descriptions
+              size="small"
+              column={2}
+              bordered
+              style={{ marginBottom: '16px' }}
+              labelStyle={{ fontWeight: 'bold', background: '#f8fafc', width: '140px' }}
+            >
+              <Descriptions.Item label="Order ID">
+                <strong style={{ color: '#2563eb' }}>{awbOrderRecord?.platform_order_id}</strong>
+              </Descriptions.Item>
+              <Descriptions.Item label="Payment">
+                <Tag color={awbOrderDetails?.payment_mode_id === 1 ? 'orange' : 'green'}>
+                  {awbOrderDetails?.payment_mode_id === 1 ? 'Ramburs (COD)' : 'Online Card'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Customer">
+                {awbOrderDetails?.customer?.name || 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Phone">
+                {awbOrderDetails?.customer?.shipping_phone || awbOrderDetails?.customer?.phone_1 || 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Address" span={2}>
+                {awbOrderDetails?.customer?.billing_street || 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Products" span={2}>
+                <div style={{ maxHeight: '120px', overflow: 'auto' }}>
+                  {awbOrderDetails?.products?.filter(p => p.status === 1).map((p, i) => (
+                    <div key={i} style={{ marginBottom: '4px', fontSize: '13px' }}>
+                      <Tag color="blue" style={{ fontSize: '11px' }}>{p.part_number || p.ext_part_number || 'N/A'}</Tag>
+                      {' × '}{p.quantity}{' — '}{p.name || p.product_name || 'Product'}
+                    </div>
+                  ))}
+                </div>
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Divider style={{ margin: '12px 0' }}>Package Details</Divider>
+
+            <Form
+              form={awbForm}
+              layout="vertical"
+              size="small"
+              style={{ maxWidth: '100%' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <Form.Item
+                  name="parcel_number"
+                  label="Parcels"
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <InputNumber min={0} max={999} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item
+                  name="envelope_number"
+                  label="Envelopes"
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <InputNumber min={0} max={9999} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item
+                  name="weight"
+                  label="Weight (kg)"
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <InputNumber min={0.1} max={99999} step={0.1} style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <Form.Item
+                  name="cod"
+                  label={
+                    <span>
+                      COD (Ramburs) {' '}
+                      <Tooltip title="Cash on delivery amount. Auto-calculated for COD orders.">
+                        <span style={{ color: '#6b7280', cursor: 'help' }}>ⓘ</span>
+                      </Tooltip>
+                    </span>
+                  }
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <InputNumber min={0} max={999999999} step={0.01} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="currency" label="Currency">
+                  <Select>
+                    <Select.Option value="RON">RON</Select.Option>
+                    <Select.Option value="EUR">EUR</Select.Option>
+                    <Select.Option value="HUF">HUF</Select.Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item
+                  name="courier_account_id"
+                  label="Courier Account"
+                >
+                  <Select
+                    placeholder="Select courier"
+                    allowClear
+                  >
+                    {awbCourierAccounts.map(ca => (
+                      <Select.Option key={ca.courier_account_id} value={ca.courier_account_id}>
+                        {ca.courier_name || `Account ${ca.courier_account_id}`}
+                        {ca.courier_account_properties?.pickup_country_code ? ` (${ca.courier_account_properties.pickup_country_code})` : ''}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <Form.Item
+                  name="sender_address_id"
+                  label="Pickup Address (Sender)"
+                >
+                  <Select
+                    placeholder="Select pickup address"
+                    allowClear
+                  >
+                    {awbAddresses.filter(a => a.address_type_id === 2).map(addr => (
+                      <Select.Option key={addr.address_id} value={addr.address_id}>
+                        {addr.city || addr.suburb || 'Address'} - {addr.address || ''}
+                        {addr.is_default ? ' ★' : ''}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+                <Form.Item name="is_oversize" label="Oversize">
+                  <Select>
+                    <Select.Option value={0}>No</Select.Option>
+                    <Select.Option value={1}>Yes</Select.Option>
+                  </Select>
+                </Form.Item>
+              </div>
+
+              <Form.Item name="observation" label="Observation">
+                <Input.TextArea rows={2} placeholder="Optional notes for the courier..." />
+              </Form.Item>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
+                <Form.Item name="pickup_and_return" label="Pickup & Return" style={{ marginBottom: 0 }}>
+                  <Select size="small">
+                    <Select.Option value={0}>No</Select.Option>
+                    <Select.Option value={1}>Yes</Select.Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="saturday_delivery" label="Saturday" style={{ marginBottom: 0 }}>
+                  <Select size="small">
+                    <Select.Option value={0}>No</Select.Option>
+                    <Select.Option value={1}>Yes</Select.Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="sameday_delivery" label="Same Day" style={{ marginBottom: 0 }}>
+                  <Select size="small">
+                    <Select.Option value={0}>No</Select.Option>
+                    <Select.Option value={1}>Yes</Select.Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="dropoff_locker" label="Drop-off Locker" style={{ marginBottom: 0 }}>
+                  <Select size="small">
+                    <Select.Option value={0}>No</Select.Option>
+                    <Select.Option value={1}>Yes</Select.Option>
+                  </Select>
+                </Form.Item>
+              </div>
+            </Form>
+          </>
+        )}
+      </Modal>
     </MainLayout>
   );
 }
