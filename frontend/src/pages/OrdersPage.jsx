@@ -569,38 +569,37 @@ export default function OrdersPage() {
 
       const customer = order.customer || {};
       
-      // Construim sender din address_id (dacă avem) sau din adresa default
+      // Construim sender din adresa de pickup a vânzătorului
       const senderData = {};
       if (values.sender_address_id) {
         const addr = awbAddresses.find(a => String(a.address_id) === String(values.sender_address_id));
-        senderData.address_id = String(values.sender_address_id);
-        senderData.name = addr?.city ? `${addr.suburb || ''}, ${addr.city}`.trim() : (customer.name || 'Seller');
-        senderData.contact = customer.name || 'Seller';
-        senderData.phone1 = customer.phone_1 || '0000000000';
+        senderData.address_id = parseInt(values.sender_address_id);
+        senderData.name = addr?.name || addr?.city || 'Seller';
+        senderData.contact = addr?.contact_person || addr?.name || 'Seller';
+        senderData.phone1 = addr?.phone || '0000000000';
         senderData.locality_id = addr?.locality_id || 1;
-        senderData.street = addr?.address || 'N/A';
+        senderData.street = addr?.address || addr?.street || 'N/A';
       } else {
-        // Fallback - use first available address info
-        const addr = awbAddresses[0] || {};
-        senderData.name = addr?.city ? `${addr.suburb || ''}, ${addr.city}`.trim() : 'Seller';
-        senderData.contact = 'Seller';
-        senderData.phone1 = '0000000000';
+        // Fallback - use first available pickup address
+        const addr = awbAddresses.find(a => a.address_type_id === 2) || awbAddresses[0] || {};
+        senderData.name = addr?.name || addr?.city || 'Seller';
+        senderData.contact = addr?.contact_person || addr?.name || 'Seller';
+        senderData.phone1 = addr?.phone || '0000000000';
         senderData.locality_id = addr?.locality_id || 1;
-        senderData.street = addr?.address || 'N/A';
+        senderData.street = addr?.address || addr?.street || 'N/A';
       }
 
-      // Construim receiver din datele comenzii
+      // Construim receiver din datele de shipping ale comenzii
       const receiverData = {
         name: customer.name || 'Customer',
         contact: customer.shipping_contact || customer.name || 'Customer',
         phone1: (customer.shipping_phone || customer.phone_1 || '').replace(/[^0-9+]/g, ''),
-        locality_id: parseInt(order.shipping_locality_id) || parseInt(customer.billing_locality_id) || 1,
-        street: customer.billing_street || 'N/A',
+        locality_id: parseInt(order.shipping_locality_id) || parseInt(customer.shipping_locality_id) || parseInt(customer.billing_locality_id) || 1,
+        street: customer.shipping_street || customer.billing_street || 'N/A',
         legal_entity: customer.legal_entity || 0,
       };
 
       // Verificăm locker delivery
-      const shippingStreet = customer.billing_street || '';
       const lockerId = order.locker_id || '';
 
       const awbPayload = {
@@ -1289,6 +1288,26 @@ export default function OrdersPage() {
           <Alert type="error" message="Could not load order details. Please try again." showIcon />
         ) : (
           <>
+            {/* Warning for FBE orders */}
+            {awbOrderDetails?.type === 2 && (
+              <Alert
+                type="warning"
+                message="Fulfilled by eMAG (FBE)"
+                description="Această comandă este gestionată de eMAG. Nu poți genera AWB pentru comenzi FBE - eMAG se ocupă de livrare."
+                showIcon
+                style={{ marginBottom: '16px' }}
+              />
+            )}
+            {/* Warning for new orders */}
+            {awbOrderDetails?.status === 1 && (
+              <Alert
+                type="info"
+                message="Comandă nouă (New)"
+                description="Comanda este nouă și va fi confirmată (acknowledged) automat înainte de generarea AWB."
+                showIcon
+                style={{ marginBottom: '16px' }}
+              />
+            )}
             {/* Order Summary */}
             <Descriptions
               size="small"
@@ -1299,6 +1318,15 @@ export default function OrdersPage() {
             >
               <Descriptions.Item label="Order ID">
                 <strong style={{ color: '#2563eb' }}>{awbOrderRecord?.platform_order_id}</strong>
+              </Descriptions.Item>
+              <Descriptions.Item label="Status / Type">
+                <Tag color={awbOrderDetails?.status === 1 ? 'orange' : awbOrderDetails?.status === 2 ? 'blue' : awbOrderDetails?.status === 4 ? 'green' : 'default'}>
+                  Status: {awbOrderDetails?.status} ({awbOrderDetails?.status === 1 ? 'New' : awbOrderDetails?.status === 2 ? 'In Progress' : awbOrderDetails?.status === 3 ? 'Prepared' : awbOrderDetails?.status === 4 ? 'Finalized' : awbOrderDetails?.status === 0 ? 'Cancelled' : awbOrderDetails?.status === 5 ? 'Returned' : 'Unknown'})
+                </Tag>
+                {' '}
+                <Tag color={awbOrderDetails?.type === 2 ? 'red' : 'cyan'}>
+                  {awbOrderDetails?.type === 2 ? 'FBE (eMAG livrează)' : 'FBS (Seller livrează)'}
+                </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Payment">
                 <Tag color={awbOrderDetails?.payment_mode_id === 1 ? 'orange' : 'green'}>
@@ -1311,8 +1339,10 @@ export default function OrdersPage() {
               <Descriptions.Item label="Phone">
                 {awbOrderDetails?.customer?.shipping_phone || awbOrderDetails?.customer?.phone_1 || 'N/A'}
               </Descriptions.Item>
-              <Descriptions.Item label="Address" span={2}>
-                {awbOrderDetails?.customer?.billing_street || 'N/A'}
+              <Descriptions.Item label="Shipping Address" span={2}>
+                {awbOrderDetails?.customer?.shipping_street || awbOrderDetails?.customer?.billing_street || 'N/A'}
+                {awbOrderDetails?.customer?.shipping_city ? `, ${awbOrderDetails.customer.shipping_city}` : ''}
+                {awbOrderDetails?.customer?.shipping_postal_code ? ` (${awbOrderDetails.customer.shipping_postal_code})` : ''}
               </Descriptions.Item>
               <Descriptions.Item label="Products" span={2}>
                 <div style={{ maxHeight: '120px', overflow: 'auto' }}>

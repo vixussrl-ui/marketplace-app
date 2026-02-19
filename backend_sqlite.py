@@ -435,7 +435,7 @@ class EMAGClient:
                 results = data.get("results", [])
                 if results and len(results) > 0:
                     order = results[0]
-                    print(f"[EMAG] Order details fetched successfully for order {order_id}")
+                    print(f"[EMAG] Order details fetched successfully for order {order_id}, status={order.get('status')}, type={order.get('type')}")
                     return order
                 
                 print(f"[EMAG] No order found with id {order_id}")
@@ -510,6 +510,36 @@ class EMAGClient:
             traceback.print_exc()
             return []
 
+    async def acknowledge_order(self, order_id):
+        """Confirmă (acknowledge) o comandă eMAG - trece din status 1 (new) în status 2 (in progress)"""
+        try:
+            headers = {
+                "Authorization": self._get_auth_header(),
+                "Content-Type": "application/json",
+            }
+            url = f"{self.base_url}/order/acknowledge/{int(order_id)}"
+            
+            print(f"[EMAG] Acknowledging order {order_id} via {url}")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json={})
+                print(f"[EMAG] Acknowledge response status: {response.status_code}")
+                
+                data = response.json()
+                print(f"[EMAG] Acknowledge response: {json.dumps(data, indent=2)}")
+                
+                if data.get("isError"):
+                    error_msg = data.get("messages", ["Unknown error"])
+                    print(f"[ERROR] EMAG acknowledge error: {error_msg}")
+                    return {"success": False, "error": error_msg}
+                
+                return {"success": True}
+        except Exception as e:
+            print(f"[ERROR] Error acknowledging eMAG order: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": str(e)}
+
     async def save_awb(self, awb_data):
         """Generează AWB pentru o comandă"""
         try:
@@ -522,8 +552,8 @@ class EMAGClient:
                 "data": [awb_data]
             }
             
-            print(f"[EMAG] Saving AWB for order {awb_data.get('order_id')}")
-            print(f"[EMAG] AWB payload: {json.dumps(awb_data, indent=2)}")
+            print(f"[EMAG] Saving AWB for order {awb_data.get('order_id')} via {url}")
+            print(f"[EMAG] AWB payload: {json.dumps(awb_data, indent=2, default=str)}")
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, json=payload, headers=headers)
@@ -1763,8 +1793,65 @@ async def generate_emag_awb(request: Request, data: dict):
             account_label=cred_d.get("account_label", ""),
         )
         
-        # Setăm order_id în awb_data
+        print(f"[EMAG] AWB generation request for order {order_id}, base_url: {client.base_url}")
+        
+        # Step 1: Read order details to check status and type
+        order_details = await client.read_order_details(int(order_id))
+        
+        if not order_details:
+            return {
+                "success": False,
+                "error": f"Nu s-au putut citi detaliile comenzii {order_id} de la eMAG"
+            }
+        
+        order_status = order_details.get("status")
+        order_type = order_details.get("type", 3)
+        
+        print(f"[EMAG] Order {order_id}: status={order_status}, type={order_type}")
+        
+        # Check if FBE (Fulfilled by eMAG) - seller cannot generate AWB
+        if order_type == 2:
+            return {
+                "success": False,
+                "error": "Comanda este Fulfilled by eMAG (FBE). Nu se poate genera AWB de către vânzător - eMAG se ocupă de livrare."
+            }
+        
+        # Check if order is cancelled or finalized
+        if order_status == 0:
+            return {
+                "success": False,
+                "error": "Comanda este anulată. Nu se poate genera AWB."
+            }
+        
+        if order_status == 4:
+            return {
+                "success": False,
+                "error": "Comanda este deja finalizată (AWB-ul a fost deja generat anterior)."
+            }
+        
+        if order_status == 5:
+            return {
+                "success": False,
+                "error": "Comanda este returnată. Nu se poate genera AWB."
+            }
+        
+        # Step 2: If order is new (status 1), acknowledge it first
+        if order_status == 1:
+            print(f"[EMAG] Order {order_id} is NEW (status 1), acknowledging first...")
+            ack_result = await client.acknowledge_order(order_id)
+            if not ack_result.get("success"):
+                return {
+                    "success": False,
+                    "error": f"Nu s-a putut confirma comanda: {ack_result.get('error', 'Unknown error')}"
+                }
+            print(f"[EMAG] Order {order_id} acknowledged successfully")
+        
+        # Step 3: Set order_id and generate AWB
         awb_data["order_id"] = int(order_id)
+        
+        # Ensure order_type is set for type 3 (fulfilled by seller)
+        if "type" not in awb_data:
+            awb_data["type"] = order_type
         
         result = await client.save_awb(awb_data)
         
